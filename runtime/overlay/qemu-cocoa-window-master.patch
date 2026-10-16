@@ -1,5 +1,5 @@
 From: Try FydeOS contributors
-Subject: [PATCH] cocoa: let the window drive the guest mode, in points
+Subject: [PATCH] cocoa: let the window drive the guest mode
 
 Applies after Try Omarchy's qemu-cocoa-minimum-guest-size.patch.
 
@@ -7,41 +7,35 @@ With zoom-to-fit the window is the master. Create it resizable from the
 start, so attaching the view no longer shrink-wraps it to the bootstrap
 surface, and stop resizeWindow from fitting the windowed frame to each guest
 mode: the guest's preferred mode follows the window through EDID, so a
-transient 4:3 firmware mode used to cut the width for good. Other modes are
-now letterboxed by zoom-to-fit. Full-screen and fixed-size windows keep
+transient 4:3 firmware mode used to cut the width for good. The aspect
+ratio is locked only once the guest shows the window's own mode; other
+modes are letterboxed by zoom-to-fit. Full-screen and fixed-size windows keep
 their sizing. updateUIInfo is dropped until applicationDidFinishLaunching
 and the first report used to ride on that first resize, so send it there.
 
-Report the guest mode in points rather than backing pixels. FydeOS treats
-the virtio output as an external monitor and keeps device scale 1, so a
-backing-pixel mode on a Retina display halves its UI against macOS's.
-TRY_FYDEOS_HIDPI=1 restores the backing-pixel mode; a fixed-size window
-uses the matching scale so the two stay inverse.
+The guest mode stays in backing pixels and the EDID density stays
+upstream's 110 DPI times the backing scale; FydeOS derives its device
+scale factor from that density (project-vmware chromium patch 0173).
 
 --- a/ui/cocoa.m
 +++ b/ui/cocoa.m
-@@ -113,6 +113,8 @@
+@@ -113,6 +113,7 @@
  static bool swap_opt_cmd;
  static bool full_grab_enabled;
  static bool immersive_mode_enabled = true;
 +static bool zoom_to_fit_requested;
-+static bool hidpi_guest;
  static NSMenuItem *fullScreenMenuItem;
  
  static bool zoom_interpolation;
-@@ -791,19 +793,25 @@
+@@ -791,19 +792,32 @@
  
  - (void) resizeWindow
  {
 -    [[self window] setContentAspectRatio:NSMakeSize(screen.width, screen.height)];
 -
      if (!([[self window] styleMask] & NSWindowStyleMaskResizable)) {
--        CGFloat width = screen.width / [[self window] backingScaleFactor];
--        CGFloat height = screen.height / [[self window] backingScaleFactor];
-+        /* Inverse of the scale updateUIInfoLocked reports, or the guest ratchets. */
-+        CGFloat scale = hidpi_guest ? [[self window] backingScaleFactor] : 1;
-+        CGFloat width = screen.width / scale;
-+        CGFloat height = screen.height / scale;
+         CGFloat width = screen.width / [[self window] backingScaleFactor];
+         CGFloat height = screen.height / [[self window] backingScaleFactor];
  
 +        [[self window] setContentAspectRatio:NSMakeSize(screen.width, screen.height)];
          [[self window] setContentSize:NSMakeSize(width, height)];
@@ -54,34 +48,21 @@ uses the matching scale so the two stay inverse.
 -        [[self window] setContentSize:[self fixAspectRatio:[self frame].size]];
 +        /*
 +         * The window is the master: the guest follows it, zoom-to-fit
-+         * letterboxes any other mode. Clear a stale aspect-ratio constraint.
++         * letterboxes any other mode. Lock the aspect ratio only once the
++         * guest shows the mode this window asked for (the mode may be a
++         * pixel or two smaller, see updateUIInfoLocked), so a transient
++         * firmware mode cannot pin the window to its shape.
 +         */
-+        [[self window] setContentResizeIncrements:NSMakeSize(1.0, 1.0)];
++        NSSize backing = [self convertSizeToBacking:[self frame].size];
++        if (fabs(backing.width - screen.width) <= 2 &&
++            fabs(backing.height - screen.height) <= 2) {
++            [[self window] setContentAspectRatio:NSMakeSize(screen.width, screen.height)];
++        } else {
++            [[self window] setContentResizeIncrements:NSMakeSize(1.0, 1.0)];
++        }
      }
  }
  
-@@ -856,7 +864,7 @@
- 
-         frameSize = cocoa_guest_frame_size(
-             isFullscreen ? [self screenSafeAreaSize] : [self frame].size,
--            [[self window] backingScaleFactor]);
-+            hidpi_guest ? [[self window] backingScaleFactor] : 1);
- 
-         if (!CVDisplayLinkCreateWithCGDisplay(display, &displayLink)) {
-             CVTime period = CVDisplayLinkGetNominalOutputVideoRefreshPeriod(displayLink);
-@@ -899,6 +907,12 @@
- 
-     info.xoff = 0;
-     info.yoff = 0;
-+    if (!hidpi_guest) {
-+        info.width = (uint32_t)frameSize.width;
-+        info.height = (uint32_t)frameSize.height;
-+        qemu_console_set_ui_info(dcl.con, &info, TRUE);
-+        return;
-+    }
-     NSSize backingFrameSize = [self convertSizeToBacking:frameSize];
-     CGFloat backingScale = [[self window] backingScaleFactor];
-     /* Keep the corresponding Hyprland logical dimensions integral. */
 @@ -1731,7 +1745,8 @@
  
          // create a window
@@ -101,15 +82,14 @@ uses the matching scale so the two stay inverse.
  }
  
  - (void)applicationWillTerminate:(NSNotification *)aNotification
-@@ -2882,6 +2899,11 @@
+@@ -2881,6 +2898,10 @@
+     dcl.con = qemu_console_lookup_default();
      kbd = qkbd_state_init(dcl.con);
      surface = qemu_console_surface(dcl.con);
- 
-+    /* Both are read while the controller creates the window. */
++
++    /* Read while the controller creates the window. */
 +    zoom_to_fit_requested = opts->u.cocoa.has_zoom_to_fit &&
 +                            opts->u.cocoa.zoom_to_fit;
-+    hidpi_guest = g_strcmp0(getenv("TRY_FYDEOS_HIDPI"), "1") == 0;
-+
+ 
      // Create an Application controller
  #ifdef CONFIG_OPENGL
-     controller = [[QemuCocoaAppController alloc] initWithCGL:display_opengl &&

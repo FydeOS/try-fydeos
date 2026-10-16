@@ -70,3 +70,27 @@ needs a permission prompt. `hda-micro` is used when the user opts in.
 Display name "Try FydeOS", bundle identifier `io.fydeos.tryfydeos`, process
 name "Try FydeOS". Provisional until Wei confirms. The icon is attempt A's
 original SVG (no FydeOS or ChromeOS trademark assets) until replaced.
+
+## D8. Guest mode in backing pixels, scale carried by EDID density (2026-10-16)
+
+The guest always gets the window's backing-pixel size, as upstream does.
+Upstream's Cocoa patch encodes the host's backing scale in the virtual
+display's EDID physical size at 110 DPI per scale unit (a 2x window reads
+~220 DPI), the same contract Try Omarchy's guest uses to pick Hyprland's
+scale. FydeOS picks its device scale factor from that density through
+`project-vmware` chromium patch 0173 (`display_change_observer.cc`): a
+virtual connector made external by `--drm-virtual-connector-is-external`
+takes the closest supported scale factor to dpi/110 instead of the fixed
+1.0 Chrome gives external displays. Measured on the m4 VM: 1776x999 points
+→ mode 3552x1998, EDID 41x23 cm, Chrome logs `device_scale_factor:2
+dpi:220.051`.
+
+Rejected: reporting the mode in points (milestone 2's first fix). It made
+text readable without a guest change but every pixel was resampled twice
+(guest → 2x backing store → panel), so text was soft in full screen.
+Rejected: a static `--fydeos-default-dsf`; it cannot know the host scale.
+
+Windowed aspect ratio: `resizeWindow` locks the window to the guest's
+ratio only once the guest shows the window's own mode, so a transient
+firmware mode cannot pin the window (the ratchet of milestone 2), and
+free resize stays available until then.

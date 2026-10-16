@@ -30,7 +30,8 @@ shutdown. Modeled on Try Omarchy, written fresh.
 - Guest-side changes live in the FydeOS overlays (`project-vmware`), never
   in this repo. Current ones: kernel patch 025 (virtio tablet presented as a
   pen tablet plus a wheel-only mouse), which is what makes QEMU's
-  `virtio-tablet-pci` usable by Chrome.
+  `virtio-tablet-pci` usable by Chrome; chromium patch 0173, which derives
+  the device scale factor from the EDID density QEMU reports (D8).
 
 ### Runtime: Try Omarchy's QEMU recipe, pinned
 
@@ -48,7 +49,9 @@ shutdown. Modeled on Try Omarchy, written fresh.
   core bottles for glib, pixman, SDL, libusb, compression libraries.
   macOS deployment target 15.0.
 - Overlay: our own `qemu-cocoa-product-identity.patch` (process name,
-  menus, quit prompt, icon file). Everything else is upstream's patch set
+  menus, quit prompt, icon file) and `qemu-cocoa-window-master.patch`
+  (resizable window drives the guest mode, ratio locked once settled,
+  first UI-info report at launch). Everything else is upstream's patch set
   unchanged; unused patches stay because dropping a Cocoa patch mid-chain
   invalidates the ones after it.
 - Later addition: spice-protocol headers and `--enable-spice-protocol`, so
@@ -151,11 +154,16 @@ Why this layout (measured in milestones 3 and 4):
 - GL backend: both Cocoa backends have one Chrome-specific failure (see
   `decisions.md` D3). Native GL is the default; crosh is the known bad
   case and has a guest-side workaround ready.
-- Display zoom: FydeOS treats the virtio output as an external monitor
-  and stays at scale 1, so a Retina window renders tiny until the user
-  sets zoom 2 once. Guest-side fix is milestone 5.
-- Guest suspend: an idle FydeOS guest entered suspend on 2026-10-14 and did
-  not wake. Not yet root-caused; relevant guest knobs are powerd prefs.
+- Display scale: fixed by D8 (backing pixels + EDID density + chromium
+  patch 0173). Images without 0173 render a Retina window at scale 1.
+- Guest suspend: an idle FydeOS guest enters s2idle after ~8 min at the
+  login screen (2026-10-14 and again 2026-10-16, console shows the PCI
+  suspend sequence) and nothing wakes it: QMP `system_wakeup` answers
+  "wake-up from suspend is not supported by this guest" on the virt
+  machine and synthetic key/tablet events are ignored. Must be fixed
+  guest-side in `project-vmware` (powerd prefs) before any user build;
+  dev workaround: `echo 1 > /var/lib/power_manager/disable_idle_suspend`
+  and `restart powerd`.
 - Clean guest shutdown: QMP `system_powerdown` reaches the guest (the
   kernel has `ACPI_BUTTON`; powerd accepts the ACPI button because the
   vmware boards set `USE=legacy_power_button`, which also gives Chrome
@@ -170,7 +178,5 @@ Why this layout (measured in milestones 3 and 4):
 - Default workspace path: `VM/v1` on Wei's Mac still holds the
   September attempt's VM; the app refuses it as foreign. Decide whether to
   remove it or move the default.
-- Window mode sizing: upstream's dynamic-display patch sizes the window
-  for an immersive product; windowed mode settled at ~52% of the screen in
-  the September attempt. Upstream's minimum-guest-size patch is newer than
-  that finding and must be re-measured.
+- Window mode sizing: resolved by the window-master overlay patch
+  (milestone 2); the initial window is upstream's 75% 16:9 frame.

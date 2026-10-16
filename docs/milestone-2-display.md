@@ -6,6 +6,11 @@ Date: 2026-10-16. Host: Apple M4, macOS 27.0.1, one display. Factory image
 `~/Library/Application Support/Try FydeOS/VM/m4`, `--forward 6322:22`, launch
 defaults otherwise (`zoom-to-fit=on`, windowed).
 
+Superseded the same day: the point-mode report below was replaced by
+backing pixels plus a guest-side scale factor, see `decisions.md` D8. The
+measurements and the window-master hunks still stand; `TRY_FYDEOS_HIDPI`
+no longer exists.
+
 ## Defects
 
 1. The window ratchets down. It is created non-resizable, so attaching the
@@ -42,8 +47,13 @@ the anchor is not found exactly once or a staged patch's hash differs.
 
 The dev image's sshd refuses the ChromiumOS testing key for root
 (`Permission denied (publickey,keyboard-interactive)`, key fingerprint
-`SHA256:Fp1qWjFL…` offered and rejected), so `/sys/class/drm` could not be
-read. Instead, QEMU trace events were enabled over QMP within 0.1 s of the
+`SHA256:Fp1qWjFL…` offered and rejected): the image carries
+`chromeos-ssh-testkeys` but not `chromeos-test-testauthkeys`, the package
+that links `/root/.ssh/authorized_keys` to it. One-time fix inside a VM:
+`mount -o remount,rw /; mkdir -p /root/.ssh; ln -s
+/usr/share/chromeos-ssh-config/keys/authorized_keys /root/.ssh/authorized_keys`
+(non-interactive root shells have no PATH). At the time `/sys/class/drm`
+could not be read. Instead, QEMU trace events were enabled over QMP within 0.1 s of the
 socket appearing (before the guest kernel starts), and every mode the guest
 put on the scanout was read from `qemu.log`:
 
