@@ -9,8 +9,10 @@ public struct Preferences: Equatable, Sendable {
         public static let microphone = "microphone"
         public static let firstRunNoteDismissed = "firstRunNoteDismissed"
         public static let workspace = "workspace"
+        public static let forwards = "forwards"
     }
     public static let workspaceEnvironment = "TRY_FYDEOS_WORKSPACE"
+    public static let forwardsEnvironment = "TRY_FYDEOS_FORWARDS"
     public static let memoryStepMiB = 1024
 
     public var cpus: Int
@@ -81,5 +83,16 @@ public struct Preferences: Equatable, Sendable {
             return URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
         }
         return Workspace.defaultURL
+    }
+
+    /// Hidden override for testing: comma-separated HOSTPORT:GUESTPORT, environment first, then the `forwards` default.
+    public static func hostForwards(store: UserDefaults, environment: [String: String] = ProcessInfo.processInfo.environment) -> (forwards: [HostForward], errors: [String]) {
+        let list = [environment[forwardsEnvironment], store.string(forKey: Key.forwards)].compactMap { $0 }.first { !$0.isEmpty } ?? ""
+        var forwards: [HostForward] = []
+        var errors: [String] = []
+        for item in list.split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces) }) where !item.isEmpty {
+            do { forwards.append(try HostForward(parsing: item)) } catch { errors.append("\(error)") }
+        }
+        return (forwards, errors)
     }
 }

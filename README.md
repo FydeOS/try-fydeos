@@ -64,4 +64,6 @@ command line. New VMs are cloned from the store.
 
 The app's VM workspace defaults to `~/Library/Application Support/Try FydeOS/VM/v1`;
 point it elsewhere with `defaults write io.fydeos.tryfydeos workspace <dir>` or
-`TRY_FYDEOS_WORKSPACE=<dir>`. App log: `~/Library/Logs/Try FydeOS/TryFydeOS.log`.
+`TRY_FYDEOS_WORKSPACE=<dir>`. Forward host ports on 127.0.0.1 to the guest with
+`defaults write io.fydeos.tryfydeos forwards "2200:22"` or `TRY_FYDEOS_FORWARDS=2200:22`
+(comma-separated `HOSTPORT:GUESTPORT`). App log: `~/Library/Logs/Try FydeOS/TryFydeOS.log`.

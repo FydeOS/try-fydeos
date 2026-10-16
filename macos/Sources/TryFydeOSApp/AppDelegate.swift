@@ -23,7 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             prefs.save(to: self.defaults)
         }
-        window.onLaunch = { [weak self] prefs in self?.controller.launch(prefs.launchOptions) }
+        window.onLaunch = { [weak self] prefs in self?.launch(prefs) }
         controller.onStateChange = { [weak self] state in self?.stateChanged(state) }
         controller.onError = { [weak self] message in self?.showError(message) }
         controller.onReadyToQuit = { [weak self] in
@@ -75,7 +75,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard autoLaunchPending, let image = controller.image, !image.isImporting else { return }
         autoLaunchPending = false
         guard image.isInstalled else { return log.write("autoLaunch skipped: the FydeOS image is not installed") }
-        controller.launch(Preferences.load(from: defaults, host: host).launchOptions)
+        launch(Preferences.load(from: defaults, host: host))
+    }
+
+    private func launch(_ prefs: Preferences) {
+        var options = prefs.launchOptions
+        let forwards = Preferences.hostForwards(store: defaults)
+        for error in forwards.errors { log.write("ignoring forward: \(error)") }
+        options.hostForwards = forwards.forwards
+        controller.launch(options)
     }
 
     private func imageStateChanged(_ state: ImageState) {

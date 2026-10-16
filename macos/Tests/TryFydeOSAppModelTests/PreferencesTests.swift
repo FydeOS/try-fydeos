@@ -54,6 +54,26 @@ func scratchDefaults() -> UserDefaults {
     #expect(Preferences.workspaceURL(store: store, environment: ["TRY_FYDEOS_WORKSPACE": "/tmp/ws-env"]).path == "/tmp/ws-env")
 }
 
+@Test func forwardsOverrideOrder() {
+    let store = scratchDefaults()
+    #expect(Preferences.hostForwards(store: store, environment: [:]).forwards == [])
+    store.set("2200:22", forKey: Preferences.Key.forwards)
+    #expect(Preferences.hostForwards(store: store, environment: [:]).forwards == [HostForward(hostPort: 2200, guestPort: 22)])
+    #expect(Preferences.hostForwards(store: store, environment: ["TRY_FYDEOS_FORWARDS": "2201:23"]).forwards == [HostForward(hostPort: 2201, guestPort: 23)])
+}
+
+@Test func forwardsParseListAndReportErrors() {
+    let store = scratchDefaults()
+    let ok = Preferences.hostForwards(store: store, environment: ["TRY_FYDEOS_FORWARDS": " 2200:22 , 8080:80 "])
+    #expect(ok.forwards == [HostForward(hostPort: 2200, guestPort: 22), HostForward(hostPort: 8080, guestPort: 80)])
+    #expect(ok.errors.isEmpty)
+    let bad = Preferences.hostForwards(store: store, environment: ["TRY_FYDEOS_FORWARDS": "2200:22,nope"])
+    #expect(bad.forwards == [HostForward(hostPort: 2200, guestPort: 22)])
+    #expect(bad.errors.count == 1 && bad.errors[0].contains("'nope'"))
+    let empty = Preferences.hostForwards(store: store, environment: ["TRY_FYDEOS_FORWARDS": ""])
+    #expect(empty.forwards == [] && empty.errors.isEmpty)
+}
+
 @Test func launchOptionsCarryPreferences() {
     let o = Preferences(cpus: 6, memoryMiB: 12288, fullScreen: true, microphone: true).launchOptions
     #expect(o == LaunchOptions(cpus: 6, memoryMiB: 12288, fullScreen: true, microphone: true))

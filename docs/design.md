@@ -95,7 +95,8 @@ why `gl=on` is the default and why the tablet is virtio, not USB.
   and menu bar.
 - Start menu: CPUs, memory, window or full screen, microphone, launch,
   shut down, logs, factory reset with typed confirmation, first-run note
-  about display zoom.
+  about display zoom. Hidden: `forwards` default / `TRY_FYDEOS_FORWARDS`
+  (comma-separated host:guest ports on 127.0.0.1), like `workspace`.
 - Storage lock: `flock` on `<vm>/.lock`, taken before preparation, held
   for the app's lifetime and inherited by QEMU through `-add-fd`. Never
   unlinked. Foreign or unmarked directories are refused.
