@@ -33,8 +33,9 @@ extension Workspace {
     public func prepare(lock: StorageLock, locations loc: Locations,
                         beforeHashing: (FactorySpec, URL) -> Void = { _, _ in }) throws -> Metadata {
         let spec = try FactorySpec.load(loc.factorySpec)
-        let image = loc.factoryImage(spec)
-        return try prepare(lock: lock, spec: spec, image: image, varsTemplate: loc.varsTemplate) {
+        if isPrepared, let existing = loadMetadata() { return existing }
+        let (image, record) = try loc.factoryStore(spec).verifiedImage()
+        return try prepare(lock: lock, spec: spec, image: image, varsTemplate: loc.varsTemplate, known: record) {
             beforeHashing(spec, image)
         }
     }

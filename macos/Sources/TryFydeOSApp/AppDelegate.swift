@@ -9,11 +9,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: AppController!
     private var window: StartMenuWindow!
     private var signalSources: [DispatchSourceSignal] = []
+    private var autoLaunchPending = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let workspace = Workspace(url: Preferences.workspaceURL(store: defaults))
         log.write("app started, version \(appVersion), workspace \(workspace.url.path)")
-        controller = AppController(driver: CoreVMDriver(workspace: workspace, log: log))
+        let image = ImageController(driver: CoreImageDriver(log: log))
+        controller = AppController(driver: CoreVMDriver(workspace: workspace, log: log), image: image)
+        image.onStateChange = { [weak self] state in self?.imageStateChanged(state) }
+        image.onError = { [weak self] message in self?.showError(message) }
         window = StartMenuWindow(controller: controller, preferences: Preferences.load(from: defaults, host: host), host: host)
         window.onPreferencesChange = { [weak self] prefs in
             guard let self else { return }
@@ -50,11 +54,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             signalSources.append(source)
         }
         showStartMenu()
-        // Hidden test hook: `open --args -autoLaunch YES` launches without a click and persists nothing.
-        if defaults.volatileDomain(forName: UserDefaults.argumentDomain)["autoLaunch"] != nil, defaults.bool(forKey: "autoLaunch") {
-            log.write("autoLaunch requested on the command line")
-            controller.launch(Preferences.load(from: defaults, host: host).launchOptions)
+        // Hidden test hooks: `open --args -autoImport YES -autoLaunch YES` import the detected image and
+        // launch without a click; they live in the argument domain only, so nothing is persisted.
+        if argumentFlag("autoImport") {
+            log.write("autoImport requested on the command line")
+            image.install()
         }
+        if argumentFlag("autoLaunch") {
+            log.write("autoLaunch requested on the command line")
+            autoLaunchPending = true
+            autoLaunchIfReady()
+        }
+    }
+
+    private func argumentFlag(_ key: String) -> Bool {
+        defaults.volatileDomain(forName: UserDefaults.argumentDomain)[key] != nil && defaults.bool(forKey: key)
+    }
+
+    private func autoLaunchIfReady() {
+        guard autoLaunchPending, let image = controller.image, !image.isImporting else { return }
+        autoLaunchPending = false
+        guard image.isInstalled else { return log.write("autoLaunch skipped: the FydeOS image is not installed") }
+        controller.launch(Preferences.load(from: defaults, host: host).launchOptions)
+    }
+
+    private func imageStateChanged(_ state: ImageState) {
+        if case .importing = state {} else { log.write("image \(state)") }
+        window.refresh()
+        autoLaunchIfReady()
     }
 
     private var appVersion: String {

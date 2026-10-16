@@ -43,12 +43,15 @@ public struct FactorySpec: Decodable, Sendable {
         return FactoryRecord(file: url.lastPathComponent, sha256: digest, bytes: size, mtime: mtime)
     }
 
-    public static func sha256(of url: URL) throws -> String {
+    public static func sha256(of url: URL, progress: (Int64) -> Void = { _ in }) throws -> String {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
         var hasher = SHA256()
+        var hashed: Int64 = 0
         while let chunk = try handle.read(upToCount: 8 << 20), !chunk.isEmpty {
             hasher.update(data: chunk)
+            hashed += Int64(chunk.count)
+            progress(hashed)
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
@@ -59,4 +62,11 @@ public struct FactoryRecord: Codable, Equatable, Sendable {
     public var sha256: String
     public var bytes: Int64
     public var mtime: Double
+
+    public init(file: String, sha256: String, bytes: Int64, mtime: Double) {
+        self.file = file
+        self.sha256 = sha256
+        self.bytes = bytes
+        self.mtime = mtime
+    }
 }

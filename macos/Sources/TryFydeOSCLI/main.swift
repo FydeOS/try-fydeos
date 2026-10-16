@@ -9,8 +9,9 @@ struct UsageError: Error, CustomStringConvertible {
 let usage = """
 usage: tryfydeos <command> [options]
 
-  doctor                      check host, runtime, firmware, factory image, workspace
-  prepare                     verify the factory image and clone the VM disk
+  doctor                      check host, runtime, firmware, factory image store, workspace
+  import-image [PATH]         copy and verify the FydeOS image into the store (PATH: found automatically)
+  prepare                     clone the VM disk from the image store
   run [vm options]            prepare if needed, boot the VM, supervise until QEMU exits
   inspect [vm options]        print the QEMU argv run would use
   status                      show workspace, last run and live QMP state
@@ -27,6 +28,7 @@ struct Options {
     var launch = LaunchOptions()
     var force = false
     var yes = false
+    var path: String?
 
     init(_ args: ArraySlice<String>, allowed: Set<String>) throws {
         var it = args.makeIterator()
@@ -40,6 +42,10 @@ struct Options {
             return n
         }
         while let arg = it.next() {
+            if allowed.contains("PATH"), path == nil, !arg.hasPrefix("-") {
+                path = (arg as NSString).expandingTildeInPath
+                continue
+            }
             guard allowed.contains(arg) || arg == "--workspace" else { throw UsageError(description: "unknown option \(arg)") }
             switch arg {
             case "--workspace": workspace = URL(fileURLWithPath: (try value(arg) as NSString).expandingTildeInPath)
@@ -127,13 +133,17 @@ func cmdDoctor(_ o: Options) throws -> Int32 {
     }
     let spec = try FactorySpec.load(loc.factorySpec)
     report("info", "factory spec \(spec.image.file) \(spec.image.version) \(spec.board)")
-    let image = loc.factoryImage(spec)
-    if let attrs = try? fm.attributesOfItem(atPath: image.path) {
-        let size = (attrs[.size] as? NSNumber)?.int64Value ?? -1
-        check(size == spec.image.bytes, "factory image \(image.path) size \(size) (sha256 checked by prepare)")
-    } else {
-        check(false, "factory image \(image.path)", missing: true)
+    let store = loc.factoryStore(spec)
+    switch store.state {
+    case .verified(let record):
+        check(true, "image store \(store.image.path) verified, sha256 \(record.sha256.prefix(12))…")
+    case .empty:
+        check(false, "image store \(store.directory.path): no \(spec.image.file); run 'tryfydeos import-image'", missing: true)
+    case .unverified(let why):
+        check(false, "image store \(store.image.path): \(why); run 'tryfydeos import-image'")
     }
+    let source = FactoryStore.findSource(loc.factoryImportCandidates(spec))
+    report("info", "import source \(source?.path ?? "none found") (looked at: \(loc.factoryImportCandidates(spec).map(\.path).joined(separator: ", ")))")
     let ws = Workspace(url: o.workspace)
     switch ws.state {
     case .absent: report("info", "workspace \(ws.url.path) absent (prepare creates it)")
@@ -144,6 +154,31 @@ func cmdDoctor(_ o: Options) throws -> Int32 {
     case .foreign(let why): check(false, "workspace \(ws.url.path): \(why)")
     }
     return failed ? 1 : 0
+}
+
+func cmdImportImage(_ o: Options) throws -> Int32 {
+    let loc = try Locations.discover()
+    let spec = try FactorySpec.load(loc.factorySpec)
+    let store = loc.factoryStore(spec)
+    if o.path == nil, case .verified(let record) = store.state {
+        print("already installed: \(store.image.path) sha256 \(record.sha256)")
+        return 0
+    }
+    let candidates = loc.factoryImportCandidates(spec)
+    guard let source = o.path.map({ URL(fileURLWithPath: $0) }) ?? FactoryStore.findSource(candidates) else {
+        throw UsageError(description: "no \(spec.image.file) found; looked at: \(candidates.map(\.path).joined(separator: ", ")); pass its PATH")
+    }
+    say("importing \(source.path) into \(store.directory.path) (\(spec.image.bytes) bytes)")
+    let start = Date()
+    var last: (ImportProgress.Phase, Int)?
+    let record = try store.importImage(from: source) { p in
+        let step = Int(p.fraction * 10)
+        guard last.map({ $0.0 != p.phase || $0.1 != step }) ?? true else { return }
+        last = (p.phase, step)
+        say("\(p.phase.rawValue) \(step * 10)%")
+    }
+    print("imported \(store.image.path) sha256 \(record.sha256) in \(String(format: "%.1f", Date().timeIntervalSince(start))) s")
+    return 0
 }
 
 func cmdPrepare(_ o: Options) throws -> Int32 {
@@ -267,7 +302,7 @@ func cmdReset(_ o: Options) throws -> Int32 {
 
 let args = CommandLine.arguments.dropFirst()
 let commands: [String: (Set<String>, (Options) throws -> Int32)] = [
-    "doctor": ([], cmdDoctor), "prepare": ([], cmdPrepare), "run": (vmFlags, cmdRun),
+    "doctor": ([], cmdDoctor), "import-image": (["PATH"], cmdImportImage), "prepare": ([], cmdPrepare), "run": (vmFlags, cmdRun),
     "inspect": (vmFlags, cmdInspect), "status": ([], cmdStatus), "shutdown": (["--force"], cmdShutdown),
     "reset": (["--yes"], cmdReset),
 ]

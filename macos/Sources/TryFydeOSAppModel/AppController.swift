@@ -56,13 +56,21 @@ public final class AppController {
     public var onError: ((String) -> Void)?
     public var onReadyToQuit: (() -> Void)?
     public var now: () -> Date = Date.init
+    public let image: ImageController?
     private let driver: VMDriver
 
-    public init(driver: VMDriver) {
+    public init(driver: VMDriver, image: ImageController? = nil) {
         self.driver = driver
+        self.image = image
     }
 
-    public var canLaunch: Bool { !state.isActive && !quitPending }
+    public var canLaunch: Bool { !state.isActive && !quitPending && image?.isInstalled != false }
+
+    /// The image's status while it is missing or installing, otherwise the VM's.
+    public func statusText(timeFormatter: (Date) -> String) -> String {
+        if !state.isActive, let text = image?.statusText { return text }
+        return state.statusText(timeFormatter: timeFormatter)
+    }
     public var canShutDown: Bool {
         switch state {
         case .starting, .running: return true

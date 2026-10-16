@@ -1,5 +1,6 @@
 import AppKit
 import TryFydeOSAppModel
+import UniformTypeIdentifiers
 import TryFydeOSCore
 
 final class StartMenuWindow: NSWindow, NSWindowDelegate, NSTextFieldDelegate {
@@ -19,6 +20,10 @@ final class StartMenuWindow: NSWindow, NSWindowDelegate, NSTextFieldDelegate {
     private let resetButton = NSButton(title: L(.factoryReset), target: nil, action: nil)
     private let quitButton = NSButton(title: L(.quit), target: nil, action: nil)
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
+    private let imageLabel = NSTextField(labelWithString: "")
+    private let installButton = NSButton(title: L(.imageInstall), target: nil, action: nil)
+    private let imageProgress = NSProgressIndicator()
+    private var grid: NSGridView!
     private let noteRow = NSStackView()
     private var resetField: NSTextField?
     private var resetConfirmButton: NSButton?
@@ -55,7 +60,7 @@ final class StartMenuWindow: NSWindow, NSWindowDelegate, NSTextFieldDelegate {
         }
         let actions: [(NSButton, Selector)] = [(launchButton, #selector(launch(_:))), (shutDownButton, #selector(shutDown(_:))),
                                                (logsButton, #selector(openLogs(_:))), (resetButton, #selector(factoryReset(_:))),
-                                               (quitButton, #selector(quit(_:)))]
+                                               (quitButton, #selector(quit(_:))), (installButton, #selector(installImage(_:)))]
         for (button, action) in actions {
             button.target = self
             button.action = action
@@ -63,7 +68,15 @@ final class StartMenuWindow: NSWindow, NSWindowDelegate, NSTextFieldDelegate {
         }
         launchButton.keyEquivalent = "\r"
 
-        let grid = NSGridView(views: [
+        imageProgress.isIndeterminate = false
+        imageProgress.minValue = 0
+        imageProgress.maxValue = 1
+        imageProgress.widthAnchor.constraint(equalToConstant: 260).isActive = true
+        let imageRow = NSStackView(views: [imageLabel, installButton])
+        imageRow.alignment = .centerY
+        grid = NSGridView(views: [
+            [NSTextField(labelWithString: L(.imageRow)), imageRow],
+            [NSGridCell.emptyContentView, imageProgress],
             [NSTextField(labelWithString: L(.cpus)), cpuPopup],
             [NSTextField(labelWithString: L(.memory)), memoryPopup],
             [NSGridCell.emptyContentView, fullScreenBox],
@@ -99,7 +112,14 @@ final class StartMenuWindow: NSWindow, NSWindowDelegate, NSTextFieldDelegate {
     }
 
     func refresh() {
-        statusLabel.stringValue = controller.state.statusText { [timeFormatter] in timeFormatter.string(from: $0) }
+        statusLabel.stringValue = controller.statusText { [timeFormatter] in timeFormatter.string(from: $0) }
+        if let image = controller.image {
+            imageLabel.stringValue = image.rowText
+            installButton.isHidden = image.isInstalled
+            installButton.isEnabled = !image.isImporting
+            grid.row(at: 1).isHidden = !image.isImporting
+            if case .importing(let progress) = image.state { imageProgress.doubleValue = progress.fraction }
+        }
         launchButton.isEnabled = controller.canLaunch
         shutDownButton.isEnabled = controller.canShutDown
         resetButton.isEnabled = controller.canFactoryReset
@@ -134,6 +154,21 @@ final class StartMenuWindow: NSWindow, NSWindowDelegate, NSTextFieldDelegate {
     @objc private func openLogs(_ sender: Any?) {
         try? FileManager.default.createDirectory(at: AppLog.directory, withIntermediateDirectories: true)
         NSWorkspace.shared.open(AppLog.directory)
+    }
+
+    @objc private func installImage(_ sender: Any?) {
+        guard let image = controller.image else { return }
+        guard image.needsFileChoice else { return image.install() }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [UTType(filenameExtension: "bin") ?? .data]
+        panel.message = L(.imageChooseMessage, image.expectedFile)
+        panel.beginSheetModal(for: self) { response in
+            guard response == .OK, let url = panel.url else { return }
+            image.install(from: url)
+        }
     }
 
     @objc private func quit(_ sender: Any?) {

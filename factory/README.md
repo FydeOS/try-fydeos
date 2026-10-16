@@ -12,8 +12,11 @@ cros build-image --board=arm64-vmware-io --no-enable-rootfs-verification dev
 
 Its output, `chromiumos_image.bin`, is copied to the Mac as the file named
 in `spec.json` and placed here (an APFS clone, `cp -c`, keeps it free).
-`TRY_FYDEOS_FACTORY_IMAGE` points elsewhere instead. The launcher checks
-the size on every use and the full SHA-256 once per VM, at preparation.
+`TRY_FYDEOS_FACTORY_IMAGE` points elsewhere instead. Either is only an
+import source: `tryfydeos import-image` (or Install… in the app) clones or
+copies it into the image store, `~/Library/Application Support/Try FydeOS/factory/`,
+checks the full SHA-256 once and records it; later uses check size and
+mtime only. `make dmg` ships this file beside the app as `FydeOS/<file>`.
 
 The `.bin` is never committed.
 

@@ -137,7 +137,7 @@ public final class Workspace {
 
     /// Clones the factory image and vars template. Idempotent: a prepared workspace is left alone.
     public func prepare(lock: StorageLock, spec: FactorySpec, image: URL, varsTemplate: URL,
-                        beforeHashing: () -> Void = {}) throws -> Metadata {
+                        known: FactoryRecord? = nil, beforeHashing: () -> Void = {}) throws -> Metadata {
         precondition(lock.path == lockFile.path && lock.fd >= 0)
         if isPrepared {
             guard let existing = loadMetadata() else {
@@ -145,7 +145,7 @@ public final class Workspace {
             }
             return existing
         }
-        let record = try spec.verify(imageAt: image, beforeHashing: beforeHashing)
+        let record = try spec.verify(imageAt: image, known: known, beforeHashing: beforeHashing)
         for leftover in [metadataFile, disk, efiVars] { try? FileManager.default.removeItem(at: leftover) }
         try Self.clone(varsTemplate, to: efiVars)
         try Self.clone(image, to: disk)

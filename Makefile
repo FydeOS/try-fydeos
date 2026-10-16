@@ -9,12 +9,13 @@ MAC_DIR ?= Workspace/try-fydeos
 WORKSPACE ?=
 RUN_ARGS ?=
 APP_ARGS ?=
+DMG_ARGS ?=
 TRYFYDEOS := macos/.build/release/tryfydeos
 WS_ARG = $(if $(WORKSPACE),--workspace "$(WORKSPACE)")
 
 MAC_ONLY = @test "$$(uname -s)" = Darwin || { echo "make $@: must run on the Apple Silicon Mac (run 'make sync' here, then make $@ there)" >&2; exit 1; }
 
-.PHONY: help sync doctor fetch runtime firmware test app-build app-test prepare run inspect icon app app-run
+.PHONY: help sync doctor fetch runtime firmware test app-build app-test prepare run inspect icon app app-run import-image dmg dmg-stage
 
 help:
 	@echo "make sync       copy the tree from the workstation to the Mac"
@@ -25,9 +26,12 @@ help:
 	@echo "make app-build  build the Swift launcher core and tryfydeos CLI (Mac)"
 	@echo "make app-test   run the Swift unit tests (Mac)"
 	@echo "make icon       render macos/Resources/TryFydeOSIcon.svg to macos/.build/TryFydeOS.icns (Mac)"
-	@echo "make app        assemble and sign dist/Try FydeOS.app (Mac; APP_ARGS='--no-image')"
+	@echo "make app        assemble and sign dist/Try FydeOS.app without the image (Mac; APP_ARGS='--with-image')"
 	@echo "make app-run    open dist/Try FydeOS.app (Mac)"
-	@echo "make prepare    verify the factory image and clone the VM disk (Mac; WORKSPACE=dir)"
+	@echo "make dmg        package dist/Try FydeOS-<version>.dmg with the image beside the app (Mac; DMG_ARGS='--sign-identity ID --notarize-profile P')"
+	@echo "make dmg-stage  stage the DMG layout in dist/stage/ without building the DMG (Mac)"
+	@echo "make import-image  copy and verify the factory image into the app's image store (Mac)"
+	@echo "make prepare    clone the VM disk from the image store (Mac; WORKSPACE=dir)"
 	@echo "make run        boot the VM with defaults (Mac; WORKSPACE=dir RUN_ARGS='--cpus 6')"
 	@echo "make inspect    print the QEMU argv run would use (Mac)"
 	@echo "make test       run unit tests (Python, plus Swift on the Mac)"
@@ -73,6 +77,17 @@ app:
 app-run:
 	$(MAC_ONLY)
 	open "dist/Try FydeOS.app"
+
+dmg:
+	$(MAC_ONLY)
+	macos/scripts/package-dmg.sh $(DMG_ARGS)
+
+dmg-stage:
+	$(MAC_ONLY)
+	macos/scripts/package-dmg.sh --stage-only
+
+import-image: app-build
+	$(TRYFYDEOS) import-image
 
 prepare: app-build
 	$(TRYFYDEOS) prepare $(WS_ARG)

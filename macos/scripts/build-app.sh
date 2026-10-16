@@ -1,15 +1,15 @@
 #!/bin/bash
-# Assemble and sign dist/Try FydeOS.app.
-#   --no-image             leave the factory image out of the bundle
+# Assemble and sign dist/Try FydeOS.app. The factory image ships beside the app, not in it.
+#   --with-image           also clone the factory image into Resources/factory (development only)
 #   --sign-identity ID     codesign identity (default "-", ad hoc)
 set -euo pipefail
 
 usage() { sed -n '2,4p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
-image=1
+image=0
 identity=-
 while [ $# -gt 0 ]; do
     case "$1" in
-        --no-image) image=0 ;;
+        --with-image) image=1 ;;
         --sign-identity) [ $# -ge 2 ] || usage; identity=$2; shift ;;
         *) usage ;;
     esac
@@ -56,24 +56,32 @@ if [ "$image" = 1 ]; then
     file=$(plutil -extract image.file raw -o - "$repo/factory/spec.json")
     bytes=$(plutil -extract image.bytes raw -o - "$repo/factory/spec.json")
     src="$repo/factory/$file"
-    [ -f "$src" ] || die "factory image $src missing (or pass --no-image)"
+    [ -f "$src" ] || die "factory image $src missing (drop --with-image)"
     size=$(stat -f %z "$src")
     [ "$size" = "$bytes" ] || die "factory image $src is $size bytes, spec says $bytes"
     say "cloning $file"
     cp -c "$src" "$res/factory/$file"
 fi
 
-sign() { codesign --force --sign "$identity" --timestamp=none "$@"; }
+# Launch Services labels the Dock tile and menu bar with the executable's file name.
+mv "$res/runtime/bin/qemu-system-aarch64" "$res/runtime/bin/Try FydeOS"
+
+# Notarization needs the hardened runtime and a secure timestamp; ad-hoc builds keep neither.
+if [ "$identity" = - ]; then
+    sign() { codesign --force --sign - --timestamp=none "$@"; }
+else
+    sign() { codesign --force --sign "$identity" --options runtime --timestamp "$@"; }
+fi
 say "signing with identity '$identity'"
 for f in "$res"/runtime/lib/*.dylib "$res/runtime/bin/zstd"; do sign "$f"; done
-sign --entitlements "$qemu_ent" "$res/runtime/bin/qemu-system-aarch64"
+sign --entitlements "$qemu_ent" "$res/runtime/bin/Try FydeOS"
 sign --entitlements "$app_ent" "$contents/MacOS/TryFydeOS"
 sign --entitlements "$app_ent" "$stage"
 
 rm -rf "$app"
 mv "$stage" "$app"
 res="$app/Contents/Resources"
-qemu="$res/runtime/bin/qemu-system-aarch64"
+qemu="$res/runtime/bin/Try FydeOS"
 
 codesign --verify --strict --verbose=2 "$app"
 codesign --verify --strict "$qemu"
@@ -83,4 +91,6 @@ codesign -d --entitlements - --xml "$app" 2>/dev/null | grep -q 'com.apple.secur
     || die "app lacks the audio-input entitlement"
 [ "$(cd "$(dirname "$qemu")/../.." && pwd)/TryFydeOS.icns" = "$res/TryFydeOS.icns" ] && [ -f "$res/TryFydeOS.icns" ] \
     || die "TryFydeOS.icns is not three levels above QEMU"
-say "ok: $app ($(du -sh "$app" | cut -f1) logical)"
+version=$("$qemu" --version | head -1) || die "bundled QEMU does not run"
+say "bundled QEMU: $version"
+say "ok: $app ($(du -sh "$app" | cut -f1))"

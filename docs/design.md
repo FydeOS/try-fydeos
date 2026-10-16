@@ -105,12 +105,19 @@ why `gl=on` is the default and why the tablet is virtio, not USB.
 
 ### Packaging
 
-`Try FydeOS.app` with the runtime, firmware, scripts and a zstd factory
-image under `Contents/Resources`. Ad-hoc signed during development without
-`--deep`, so the QEMU hypervisor entitlement survives. Developer ID plus
-notarization once credentials exist. DMG via `hdiutil`.
+`Try FydeOS.app` (~173 MB) holds the runtime, firmware, `spec.json` and
+icon under `Contents/Resources`; the QEMU binary is installed as
+`runtime/bin/Try FydeOS`. The factory image is NOT in the bundle: the DMG
+carries it as `FydeOS/<image>` next to the app, and the start menu
+imports it into `~/Library/Application Support/Try FydeOS/factory/`
+(clonefile on the same volume, streaming copy otherwise, SHA-256 verified
+once, recorded in `<image>.verified.json`). VMs clone from that store.
+Ad-hoc signed during development without `--deep`, so the QEMU
+hypervisor entitlement survives; Developer ID plus notarization are wired
+in `build-app.sh` and `package-dmg.sh` but unexercised. DMG is ULFO via
+`hdiutil`, about 1.5 GB.
 
-Two things learned in milestone 3 that milestone 4 must do:
+Why this layout (measured in milestones 3 and 4):
 - Install the QEMU binary inside the bundle as
   `Contents/Resources/runtime/bin/Try FydeOS`, as upstream does. Launch
   Services labels the Dock tile and menu bar with the executable's file

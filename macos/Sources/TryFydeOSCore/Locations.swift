@@ -1,20 +1,47 @@
+import Darwin
 import Foundation
 
 public struct Locations: Sendable {
     public var root: URL?
     public var bundleResources: URL?
+    /// The app bundle where the user put it (not its App Translocation copy).
+    public var appBundle: URL?
     public var runtime: URL
     public var firmware: URL
     public var factorySpec: URL
+    public var factoryStoreDirectory: URL
     public var factoryImageOverride: URL?
 
-    public var qemu: URL { runtime.appendingPathComponent("bin/qemu-system-aarch64") }
+    /// Launch Services names the Dock tile after the executable file, so the bundle ships QEMU as `Try FydeOS`.
+    public static let qemuNames = ["Try FydeOS", "qemu-system-aarch64"]
+
+    public var qemu: URL {
+        let bin = runtime.appendingPathComponent("bin")
+        let found = Self.qemuNames.first { FileManager.default.isExecutableFile(atPath: bin.appendingPathComponent($0).path) }
+        return bin.appendingPathComponent(found ?? Self.qemuNames.last!)
+    }
     public var firmwareCode: URL { firmware.appendingPathComponent("edk2-aarch64-code.fd") }
     public var varsTemplate: URL { firmware.appendingPathComponent("edk2-arm-vars.fd") }
     public var firmwareSums: URL { firmware.appendingPathComponent("SHA256SUMS") }
 
-    public func factoryImage(_ spec: FactorySpec) -> URL {
-        factoryImageOverride ?? factorySpec.deletingLastPathComponent().appendingPathComponent(spec.image.file)
+    public func factoryStore(_ spec: FactorySpec) -> FactoryStore {
+        FactoryStore(directory: factoryStoreDirectory, spec: spec)
+    }
+
+    /// Where an image to import may be, in order: TRY_FYDEOS_FACTORY_IMAGE, the bundle's own
+    /// `Resources/factory` (`--with-image` builds), the repository's `factory/`, then beside the app
+    /// bundle, directly or in a `FydeOS` folder (the DMG layout).
+    public func factoryImportCandidates(_ spec: FactorySpec) -> [URL] {
+        let file = spec.image.file
+        var candidates: [URL] = []
+        if let factoryImageOverride { candidates.append(factoryImageOverride) }
+        if let bundleResources { candidates.append(bundleResources.appendingPathComponent("factory/\(file)")) }
+        if let root { candidates.append(root.appendingPathComponent("factory/\(file)")) }
+        if let appBundle {
+            let dir = appBundle.deletingLastPathComponent()
+            candidates += [dir.appendingPathComponent(file), dir.appendingPathComponent("FydeOS/\(file)")]
+        }
+        return candidates
     }
 
     /// App bundle `Contents/Resources` first, then the repository layout; the
@@ -34,13 +61,28 @@ public struct Locations: Sendable {
             if let value = env[key], !value.isEmpty { return URL(fileURLWithPath: value).standardizedFileURL }
             return try base(inBundle, inRepo)
         }
-        let image = env["TRY_FYDEOS_FACTORY_IMAGE"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0).standardizedFileURL }
+        func path(_ key: String) -> URL? {
+            env[key].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0).standardizedFileURL }
+        }
         return Locations(root: root,
                          bundleResources: resources,
+                         appBundle: resources.map { originalURL(of: $0.deletingLastPathComponent().deletingLastPathComponent()) },
                          runtime: try pick("TRY_FYDEOS_RUNTIME", "runtime", "out/runtime/current/runtime"),
                          firmware: try pick("TRY_FYDEOS_FIRMWARE", "firmware", "firmware"),
                          factorySpec: try base("factory/spec.json", "factory/spec.json"),
-                         factoryImageOverride: image)
+                         factoryStoreDirectory: path(FactoryStore.environmentKey) ?? FactoryStore.defaultDirectory,
+                         factoryImageOverride: path("TRY_FYDEOS_FACTORY_IMAGE"))
+    }
+
+    /// Gatekeeper runs a quarantined app from a read-only random path; its siblings are only
+    /// visible at the original path, which Security.framework reports (SPI, looked up at run time).
+    static func originalURL(of bundle: URL) -> URL {
+        guard bundle.path.contains("/AppTranslocation/"),
+              let handle = dlopen("/System/Library/Frameworks/Security.framework/Security", RTLD_LAZY),
+              let symbol = dlsym(handle, "SecTranslocateCreateOriginalPathForURL") else { return bundle }
+        typealias Original = @convention(c) (CFURL, UnsafeMutablePointer<Unmanaged<CFError>?>?) -> Unmanaged<CFURL>?
+        let original = unsafeBitCast(symbol, to: Original.self)
+        return original(bundle as CFURL, nil).map { $0.takeRetainedValue() as URL } ?? bundle
     }
 
     /// `<name>.app/Contents/MacOS/<exe>` with `Contents/Resources/factory/spec.json` present.
