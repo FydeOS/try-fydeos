@@ -31,7 +31,8 @@ shutdown. Modeled on Try Omarchy, written fresh.
   in this repo. Current ones: kernel patch 025 (virtio tablet presented as a
   pen tablet plus a wheel-only mouse), which is what makes QEMU's
   `virtio-tablet-pci` usable by Chrome; chromium patch 0173, which derives
-  the device scale factor from the EDID density QEMU reports (D8).
+  the device scale factor from the EDID density QEMU reports (D8); the
+  `disable_idle_suspend` powerd pref in the arm64 vmware BSP (see risks).
 
 ### Runtime: Try Omarchy's QEMU recipe, pinned
 
@@ -157,14 +158,18 @@ Why this layout (measured in milestones 3 and 4):
   case and has a guest-side workaround ready.
 - Display scale: fixed by D8 (backing pixels + EDID density + chromium
   patch 0173). Images without 0173 render a Retina window at scale 1.
-- Guest suspend: an idle FydeOS guest enters s2idle after ~8 min at the
-  login screen (2026-10-14 and again 2026-10-16, console shows the PCI
-  suspend sequence) and nothing wakes it: QMP `system_wakeup` answers
-  "wake-up from suspend is not supported by this guest" on the virt
-  machine and synthetic key/tablet events are ignored. Must be fixed
-  guest-side in `project-vmware` (powerd prefs) before any user build;
-  dev workaround: `echo 1 > /var/lib/power_manager/disable_idle_suspend`
-  and `restart powerd`.
+- Guest suspend (fixed guest-side): powerd's login-screen policy suspends
+  after 8m30s idle. On the QEMU virt machine the guest only has s2idle
+  (QEMU's PSCI offers no SYSTEM_SUSPEND, so `mem_sleep` is `[s2idle]` and
+  QMP `system_wakeup` has nothing to wake), and in s2idle no interrupt is
+  wake-enabled: the GED path of the ACPI power button is requested
+  without `enable_irq_wake` (`drivers/acpi/evged.c`) and virtio-input has
+  no wakeup support, so key, pointer and power-button events are all
+  masked. Measured 2026-10-16: frozen guest, QMP power button, still
+  unreachable; UTM shows the same. Fix: `disable_idle_suspend` powerd pref
+  in `chromeos-bsp-arm64-openfyde_vmware` (idle becomes a no-op, dim and
+  screen-off stay). Follow-up: wake-enable the GED and virtio-input
+  interrupts in the kernel so an explicit sleep is wakeable.
 - Clean guest shutdown: QMP `system_powerdown` reaches the guest (the
   kernel has `ACPI_BUTTON`; powerd accepts the ACPI button because the
   vmware boards set `USE=legacy_power_button`, which also gives Chrome
