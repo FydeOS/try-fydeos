@@ -1,0 +1,115 @@
+From: Try FydeOS contributors
+Subject: [PATCH] cocoa: let the window drive the guest mode, in points
+
+Applies after Try Omarchy's qemu-cocoa-minimum-guest-size.patch.
+
+With zoom-to-fit the window is the master. Create it resizable from the
+start, so attaching the view no longer shrink-wraps it to the bootstrap
+surface, and stop resizeWindow from fitting the windowed frame to each guest
+mode: the guest's preferred mode follows the window through EDID, so a
+transient 4:3 firmware mode used to cut the width for good. Other modes are
+now letterboxed by zoom-to-fit. Full-screen and fixed-size windows keep
+their sizing. updateUIInfo is dropped until applicationDidFinishLaunching
+and the first report used to ride on that first resize, so send it there.
+
+Report the guest mode in points rather than backing pixels. FydeOS treats
+the virtio output as an external monitor and keeps device scale 1, so a
+backing-pixel mode on a Retina display halves its UI against macOS's.
+TRY_FYDEOS_HIDPI=1 restores the backing-pixel mode; a fixed-size window
+uses the matching scale so the two stay inverse.
+
+--- a/ui/cocoa.m
++++ b/ui/cocoa.m
+@@ -113,6 +113,8 @@
+ static bool swap_opt_cmd;
+ static bool full_grab_enabled;
+ static bool immersive_mode_enabled = true;
++static bool zoom_to_fit_requested;
++static bool hidpi_guest;
+ static NSMenuItem *fullScreenMenuItem;
+ 
+ static bool zoom_interpolation;
+@@ -791,19 +793,25 @@
+ 
+ - (void) resizeWindow
+ {
+-    [[self window] setContentAspectRatio:NSMakeSize(screen.width, screen.height)];
+-
+     if (!([[self window] styleMask] & NSWindowStyleMaskResizable)) {
+-        CGFloat width = screen.width / [[self window] backingScaleFactor];
+-        CGFloat height = screen.height / [[self window] backingScaleFactor];
++        /* Inverse of the scale updateUIInfoLocked reports, or the guest ratchets. */
++        CGFloat scale = hidpi_guest ? [[self window] backingScaleFactor] : 1;
++        CGFloat width = screen.width / scale;
++        CGFloat height = screen.height / scale;
+ 
++        [[self window] setContentAspectRatio:NSMakeSize(screen.width, screen.height)];
+         [[self window] setContentSize:NSMakeSize(width, height)];
+         [[self window] center];
+     } else if ([[self window] styleMask] & NSWindowStyleMaskFullScreen) {
++        [[self window] setContentAspectRatio:NSMakeSize(screen.width, screen.height)];
+         [[self window] setContentSize:[self fixAspectRatio:[self screenSafeAreaSize]]];
+         [[self window] center];
+     } else {
+-        [[self window] setContentSize:[self fixAspectRatio:[self frame].size]];
++        /*
++         * The window is the master: the guest follows it, zoom-to-fit
++         * letterboxes any other mode. Clear a stale aspect-ratio constraint.
++         */
++        [[self window] setContentResizeIncrements:NSMakeSize(1.0, 1.0)];
+     }
+ }
+ 
+@@ -856,7 +864,7 @@
+ 
+         frameSize = cocoa_guest_frame_size(
+             isFullscreen ? [self screenSafeAreaSize] : [self frame].size,
+-            [[self window] backingScaleFactor]);
++            hidpi_guest ? [[self window] backingScaleFactor] : 1);
+ 
+         if (!CVDisplayLinkCreateWithCGDisplay(display, &displayLink)) {
+             CVTime period = CVDisplayLinkGetNominalOutputVideoRefreshPeriod(displayLink);
+@@ -899,6 +907,12 @@
+ 
+     info.xoff = 0;
+     info.yoff = 0;
++    if (!hidpi_guest) {
++        info.width = (uint32_t)frameSize.width;
++        info.height = (uint32_t)frameSize.height;
++        qemu_console_set_ui_info(dcl.con, &info, TRUE);
++        return;
++    }
+     NSSize backingFrameSize = [self convertSizeToBacking:frameSize];
+     CGFloat backingScale = [[self window] backingScaleFactor];
+     /* Keep the corresponding Hyprland logical dimensions integral. */
+@@ -1731,7 +1745,8 @@
+ 
+         // create a window
+         window = [[NSWindow alloc] initWithContentRect:frame
+-            styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskMiniaturizable|NSWindowStyleMaskClosable
++            styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskMiniaturizable|NSWindowStyleMaskClosable|
++                      (zoom_to_fit_requested ? NSWindowStyleMaskResizable : 0)
+             backing:NSBackingStoreBuffered defer:NO];
+         if(!window) {
+             error_report("(cocoa) can't create window");
+@@ -1775,6 +1790,8 @@
+ {
+     COCOA_DEBUG("QemuCocoaAppController: applicationDidFinishLaunching\n");
+     allow_events = true;
++    /* Earlier calls were dropped by allow_events; send the window's size now. */
++    [cocoaView updateUIInfo];
+ }
+ 
+ - (void)applicationWillTerminate:(NSNotification *)aNotification
+@@ -2882,6 +2899,11 @@
+     kbd = qkbd_state_init(dcl.con);
+     surface = qemu_console_surface(dcl.con);
+ 
++    /* Both are read while the controller creates the window. */
++    zoom_to_fit_requested = opts->u.cocoa.has_zoom_to_fit &&
++                            opts->u.cocoa.zoom_to_fit;
++    hidpi_guest = g_strcmp0(getenv("TRY_FYDEOS_HIDPI"), "1") == 0;
++
+     // Create an Application controller
+ #ifdef CONFIG_OPENGL
+     controller = [[QemuCocoaAppController alloc] initWithCGL:display_opengl &&

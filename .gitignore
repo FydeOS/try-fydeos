@@ -1,0 +1,11 @@
+# build outputs and caches
+.cache/
+out/
+dist/
+.build/
+*.bin
+*.img
+*.fd
+*.zst
+.DS_Store
+__pycache__/

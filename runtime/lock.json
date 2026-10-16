@@ -1,0 +1,334 @@
+{
+  "archives": [
+    {
+      "name": "qemu-c3d48b7d1e89604920e5b81b91140c2ad39a1943.tar.gz",
+      "sha256": "7563781d7dec46f11509801e027f852597235d29ca7afa44a07ed9d8b108b8cd",
+      "url": "https://gitlab.com/qemu-project/qemu/-/archive/c3d48b7d1e89604920e5b81b91140c2ad39a1943/qemu-c3d48b7d1e89604920e5b81b91140c2ad39a1943.tar.gz"
+    },
+    {
+      "name": "libslirp-v4.9.4.tar.gz",
+      "sha256": "3998863b020aeda34bddc567097c6efba55a78cdf6eeee6bcd42c11ef23967da",
+      "url": "https://gitlab.freedesktop.org/slirp/libslirp/-/archive/v4.9.4/libslirp-v4.9.4.tar.gz"
+    },
+    {
+      "name": "meson-1.9.0.tar.gz",
+      "sha256": "cd27277649b5ed50d19875031de516e270b22e890d9db65ed9af57d18ebc498d",
+      "url": "https://github.com/mesonbuild/meson/releases/download/1.9.0/meson-1.9.0.tar.gz"
+    },
+    {
+      "name": "keycodemapdb-f5772a62ec52591ff6870b7e8ef32482371f22c6.tar.gz",
+      "sha256": "d014b53382dbb17b8196ad12f50de7f20d0ef1b9f7d54b0be51a6cbb14209195",
+      "url": "https://gitlab.com/qemu-project/keycodemapdb/-/archive/f5772a62ec52591ff6870b7e8ef32482371f22c6/keycodemapdb-f5772a62ec52591ff6870b7e8ef32482371f22c6.tar.gz"
+    },
+    {
+      "name": "dtc-b6910bec11614980a21e46fbccc35934b671bd81.tar.gz",
+      "sha256": "e115f987eec23a1ba25150a46ced1675de3716072d3b4905afb3a9cda0f007c7",
+      "url": "https://git.kernel.org/pub/scm/utils/dtc/dtc.git/snapshot/dtc-b6910bec11614980a21e46fbccc35934b671bd81.tar.gz"
+    },
+    {
+      "name": "ninja-1.13.0-py3-none-macosx_10_9_universal2.whl",
+      "sha256": "fa2a8bfc62e31b08f83127d1613d10821775a0eb334197154c4d6067b7068ff1",
+      "url": "https://files.pythonhosted.org/packages/3c/74/d02409ed2aa865e051b7edda22ad416a39d81a84980f544f8de717cab133/ninja-1.13.0-py3-none-macosx_10_9_universal2.whl"
+    },
+    {
+      "name": "setuptools-84.0.0-py3-none-any.whl",
+      "sha256": "51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670",
+      "url": "https://files.pythonhosted.org/packages/95/9c/c510029fc6ef33a6275cd2c5d3cecd6613dfd6aa401d57c54f1c18852ccf/setuptools-84.0.0-py3-none-any.whl"
+    },
+    {
+      "name": "packaging-26.3-py3-none-any.whl",
+      "sha256": "d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c",
+      "url": "https://files.pythonhosted.org/packages/63/34/ba1c580383c9eada3711951fef0795c80b829a078d72188184bcab9dd527/packaging-26.3-py3-none-any.whl"
+    },
+    {
+      "name": "wheel-0.48.0-py3-none-any.whl",
+      "sha256": "3217dcc807155e45db462d7ef2431f5ddda0d7273b700d05a67b271ceb1287ab",
+      "url": "https://files.pythonhosted.org/packages/2e/29/69cfbb602cd91690c55d38ba9fe53e6a7e76a6fa647bf38f19c138d25449/wheel-0.48.0-py3-none-any.whl"
+    },
+    {
+      "name": "pip-26.2.1-py3-none-any.whl",
+      "sha256": "71138adf1f4ca900cdb7d289c21b7494329f2332b6d85f0e1c42108c0384ed3e",
+      "url": "https://files.pythonhosted.org/packages/f3/6e/1736e5b4ae2b778ef2f81c47d797de9f891d4d8acb047a24ca37a60294dd/pip-26.2.1-py3-none-any.whl"
+    },
+    {
+      "name": "virglrenderer-1.3.0.tar.gz",
+      "sha256": "065bc56e89e6f631f96101cd62eba0748e48eb888b434edc86e89d05395e76f3",
+      "url": "https://gitlab.freedesktop.org/virgl/virglrenderer/-/archive/1.3.0/virglrenderer-1.3.0.tar.gz"
+    },
+    {
+      "name": "homebrew-virglrenderer-1.0.42.tar.gz",
+      "sha256": "950273fbba46905b6112ee2bd0598c1da706c25319a7347058cbc52f04ba96dd",
+      "url": "https://codeload.github.com/startergo/homebrew-virglrenderer/tar.gz/refs/tags/v1.0.42"
+    },
+    {
+      "name": "pyyaml-6.0.3.tar.gz",
+      "sha256": "d76623373421df22fb4cf8817020cbb7ef15c725b9d5e45f17e189bfc384190f",
+      "url": "https://files.pythonhosted.org/packages/05/8e/961c0007c59b8dd7729d542c61a4d537767a59645b82a0b521206e1e25c2/pyyaml-6.0.3.tar.gz"
+    },
+    {
+      "name": "angle-1.0.16.arm64_sequoia.bottle.tar.gz",
+      "sha256": "29fe2175b157a65f12879f9a12b5c8f94d0a76fafdf41ff009a2fdb4e9df525c",
+      "url": "https://github.com/startergo/homebrew-angle/releases/download/v1.0.16/angle-1.0.16.arm64_sequoia.bottle.tar.gz"
+    },
+    {
+      "name": "libepoxy-1.0.5.arm64_sequoia.bottle.tar.gz",
+      "sha256": "109384a1d37edf207a9b9f3d8950710c00767635b3c7ff295e3af83611876ef2",
+      "url": "https://github.com/startergo/homebrew-libepoxy/releases/download/v1.0.5/libepoxy-1.0.5.arm64_sequoia.bottle.tar.gz"
+    },
+    {
+      "ghcr_formula": "glib",
+      "name": "glib--2.88.3.arm64_sequoia.bottle.1.tar.gz",
+      "sha256": "ca168ac34920f6ee13187d8e88af7d55c50b582fa78a5511e15fe9dd875e8b40",
+      "url": "https://ghcr.io/v2/homebrew/core/glib/blobs/sha256:ca168ac34920f6ee13187d8e88af7d55c50b582fa78a5511e15fe9dd875e8b40"
+    },
+    {
+      "ghcr_formula": "pixman",
+      "name": "pixman--0.46.4.arm64_sequoia.bottle.1.tar.gz",
+      "sha256": "86f5fc013d2b22bbe41c1c14661287bf8e8e4c3ac95cd05b08b886d24918fe34",
+      "url": "https://ghcr.io/v2/homebrew/core/pixman/blobs/sha256:86f5fc013d2b22bbe41c1c14661287bf8e8e4c3ac95cd05b08b886d24918fe34"
+    },
+    {
+      "ghcr_formula": "libslirp",
+      "name": "libslirp--4.9.4.arm64_sequoia.bottle.tar.gz",
+      "sha256": "78dc33e108213bceb8f4b8a9d0293c0ff578a806ace4dfc4199af8c9714a2ffe",
+      "url": "https://ghcr.io/v2/homebrew/core/libslirp/blobs/sha256:78dc33e108213bceb8f4b8a9d0293c0ff578a806ace4dfc4199af8c9714a2ffe"
+    },
+    {
+      "ghcr_formula": "libusb",
+      "name": "libusb--1.0.30.arm64_sequoia.bottle.tar.gz",
+      "sha256": "a8d271bd5d9e7065987960caa52a9130d7fe6321ff1bad751499e465d0413e38",
+      "url": "https://ghcr.io/v2/homebrew/core/libusb/blobs/sha256:a8d271bd5d9e7065987960caa52a9130d7fe6321ff1bad751499e465d0413e38"
+    },
+    {
+      "ghcr_formula": "sdl2-compat",
+      "name": "sdl2-compat--2.32.70.arm64_sequoia.bottle.tar.gz",
+      "sha256": "b5da3b02dfd9a68368f62a317b29f845dad4f29e067fc4aa81a351ca527a82c3",
+      "url": "https://ghcr.io/v2/homebrew/core/sdl2-compat/blobs/sha256:b5da3b02dfd9a68368f62a317b29f845dad4f29e067fc4aa81a351ca527a82c3"
+    },
+    {
+      "ghcr_formula": "sdl3",
+      "name": "sdl3--3.4.14.arm64_sequoia.bottle.tar.gz",
+      "sha256": "012d5bb068548cb42df1fd6ab231a8ef76e706a82822d84ed71a10be7f155263",
+      "url": "https://ghcr.io/v2/homebrew/core/sdl3/blobs/sha256:012d5bb068548cb42df1fd6ab231a8ef76e706a82822d84ed71a10be7f155263"
+    },
+    {
+      "ghcr_formula": "gettext",
+      "name": "gettext--1.0.arm64_sequoia.bottle.1.tar.gz",
+      "sha256": "dde3cd0db0d7549fadf762b901f8c548dae99e3c592a6e6d41f60e1436253e5e",
+      "url": "https://ghcr.io/v2/homebrew/core/gettext/blobs/sha256:dde3cd0db0d7549fadf762b901f8c548dae99e3c592a6e6d41f60e1436253e5e"
+    },
+    {
+      "ghcr_formula": "pcre2",
+      "name": "pcre2--10.47_1.arm64_sequoia.bottle.tar.gz",
+      "sha256": "bef2e718b92e5e819a51723157e60eceb76acc4efb0894a10c315cd36abca13c",
+      "url": "https://ghcr.io/v2/homebrew/core/pcre2/blobs/sha256:bef2e718b92e5e819a51723157e60eceb76acc4efb0894a10c315cd36abca13c"
+    },
+    {
+      "ghcr_formula": "zstd",
+      "name": "zstd--1.5.7_1.arm64_sequoia.bottle.tar.gz",
+      "sha256": "d72adf48460a8384b256f88061cd7b9df4977df7fa2e0794051d427db754a565",
+      "url": "https://ghcr.io/v2/homebrew/core/zstd/blobs/sha256:d72adf48460a8384b256f88061cd7b9df4977df7fa2e0794051d427db754a565"
+    },
+    {
+      "ghcr_formula": "lz4",
+      "name": "lz4--1.10.0.arm64_sequoia.bottle.1.tar.gz",
+      "sha256": "5bd143b7b784989e549637ea4e484af85ba481e640dde69bc35f3843ae25abc6",
+      "url": "https://ghcr.io/v2/homebrew/core/lz4/blobs/sha256:5bd143b7b784989e549637ea4e484af85ba481e640dde69bc35f3843ae25abc6"
+    },
+    {
+      "ghcr_formula": "xz",
+      "name": "xz--5.8.3.arm64_sequoia.bottle.tar.gz",
+      "sha256": "c4be907ac8459f8b3e764c06287cc88b79c1d5c16a2db1c0335e1facf4fd4dbe",
+      "url": "https://ghcr.io/v2/homebrew/core/xz/blobs/sha256:c4be907ac8459f8b3e764c06287cc88b79c1d5c16a2db1c0335e1facf4fd4dbe"
+    }
+  ],
+  "recipe": [
+    {
+      "mode": "100644",
+      "path": "LICENSE",
+      "sha256": "f8360abaaf0114fbb7403b682bc8d21304fcf8bacb0f351261cdf792d75ea481"
+    },
+    {
+      "mode": "100644",
+      "path": "THIRD_PARTY_NOTICES.md",
+      "sha256": "f3220730693a41798279762d55cb718ec9ba48df7f1146fd58b4fcb999508fef"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/Tests/virgl/run-regressions.py",
+      "sha256": "413f960618ca3d804f1f1b97d26776a2d0393a5e76bb9acdba7800a4276d97f6"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/Tests/virgl/test-multisample-formats.c",
+      "sha256": "fdfc933a0bac753d0f9a6642f94714cf2f5a3363850013f92dc7cb2b73f22b49"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/Tests/virgl/test-native-shader-inputs.c",
+      "sha256": "93c3f269c0bae9159ab63b26851ef09b2b7d8a72a913f86ea3094457c6921db9"
+    },
+    {
+      "mode": "100755",
+      "path": "macos/build-qemu-gpu-runtime.sh",
+      "sha256": "6a4d75aad8a864b42b61b45aafad976688d8d13be58f8509d118a02f9a55904e"
+    },
+    {
+      "mode": "100755",
+      "path": "macos/bundle-macho-dependencies.sh",
+      "sha256": "5b294d56a6acb99e9fd0ea6be7aae3c7050490c62645c69ab01fc5e048184b11"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/libslirp-darwin-icmp-matching.patch",
+      "sha256": "20f3d424c79929fb82d240d0ee06b99e9f93ecfb9460579dc414303820d59f90"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/libslirp-ipv4-udp-translation.patch",
+      "sha256": "95e8ee890be78cdce70b3ee54a8adac27be02421be08b986ae987c74ef8cec8c"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/qemu-9p-guest-owner.patch",
+      "sha256": "41247692501655393ae3a40f56915472ab29b6e89c5173e33db1f62cca56632f"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/qemu-cocoa-dynamic-display.patch",
+      "sha256": "1ce59350b6b8e6842bc0c9ca34c97f54cb75e85e2d7b35e5b483858654c4d693"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/qemu-cocoa-full-grab-focus.patch",
+      "sha256": "d94aaa7b8b8b97eb25a5ace2b3a1268985e1b16e4e6201847b926b8ee709dbfb"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/qemu-cocoa-full-grab-reenable.patch",
+      "sha256": "f6ed7e01e1554049aa3cf2964d1f4a851cb1735208f9ddc88eeb608d1b7fbaed"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/qemu-cocoa-immersive-mode.patch",
+      "sha256": "2462463932f7db0d659f754f7f9c182884564dbcd7d4b8e523f1b57f0bd9fe5b"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/qemu-cocoa-injected-text.patch",
+      "sha256": "18d64d52f715d0cf1b2b6d1761059371e1859ee61faf3cc4800e2effc1ed4dd1"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/qemu-cocoa-iso-section-grave-swap.patch",
+      "sha256": "57f33a5fb08fb90a7813b13bb7037a13198e4d7db230085b1faa28b284cf2387"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/qemu-cocoa-minimum-guest-size.patch",
+      "sha256": "f01e20999bf87821639c93f3489eb093b292c48b107a14ba4fbdad5cbf5840a5"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/qemu-cocoa-pause-ownership.patch",
+      "sha256": "1a5729b36eb3e437395d41883a10c3c652df71d289d5df84d95aebd49c78a8f0"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/qemu-cocoa-pinch-zoom.patch",
+      "sha256": "37acb8895dddd35fc66812d0c49ec5fc697f9127e9e12ed2e60d17999bf32aee"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/qemu-cocoa-precise-scroll.patch",
+      "sha256": "54252b3b19358aa7e2c75d5f50775a7f488ef2d8b4db8723ba4768b56316a78f"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/qemu-cocoa-product-identity.patch",
+      "sha256": "5c9358c2858a74d6a678eacaae550a021f3e616c98c4e4e98c0e50bd869a0666"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/qemu-darwin-gpu-fence-poll.patch",
+      "sha256": "1ac407bdb617dfc52d004d0ebd0d07641d920f7d3a9756223c6426a207fb1499"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/qemu-darwin-strchrnul-compat.patch",
+      "sha256": "ec1048dd0e8ebe53bf7e8a3bca9bf2f5f4336cd607d4cd077437470e9a32094a"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/qemu-gpu-spike-resolution-fix.patch",
+      "sha256": "b554e1ef9910d0891d69ee0fe84e479559c057dc28291e36e1524031808fc69f"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/qemu-hda-full-ring-recovery.patch",
+      "sha256": "d1e93fd303777f424d7b11522fcf44bf726058901e85de3920c33e9083f301ea"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/qemu-hvf-free-page-reclaim.patch",
+      "sha256": "5d422130996b99145d017d4429df660a07c757388ef7d52cba389766c18b0acf"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/qemu-hvf-mapped-sections.patch",
+      "sha256": "2991378d565faeaf114bb5948bfa9ad05c39b078e4e1f4c2a674c3283800fab0"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/qemu-sdl-audio-device-selection.patch",
+      "sha256": "03aca71c26163c337338cc3b2013c35430690fc0e8b66c5ce92a42f59a9b3334"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/qemu-texture-borrowing-11.1.patch",
+      "sha256": "b20bdf9a7d7ccda5b86366ad9d09a3bf95308b98a06b1ece281344405bcc7ab9"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/qemu-usb-host-exact-bus.patch",
+      "sha256": "5e39159171295c566d014a1ef2744130f80fa02b742c349fa47373b00ae697ec"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/patches/virgl-native-opengl.patch",
+      "sha256": "692ed73cf88780b4c0e04c56e3cfb21cec761768dea909d755624e07d82fc60c"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/pinned-runtime-bottles.sh",
+      "sha256": "14c9bd8f518af098d801a3b087451dd44e43058cc7315990f71f19ee860b7ab4"
+    },
+    {
+      "mode": "100755",
+      "path": "macos/prepare-qemu-gpu-runtime.sh",
+      "sha256": "abb5f4b5a9a7534b378335d7f05aeba2898cad654f9507a6d16c55df86ef867e"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/qemu-hvf.entitlements",
+      "sha256": "133429799e22a1cd6af02bd2aa516e9e896c3b0752e85cd55ea00369c1f3f742"
+    },
+    {
+      "mode": "100644",
+      "path": "macos/runtime-files.txt",
+      "sha256": "ecaef816d5a4b6333e03c92d2827125eabaedd81b872a2366e438786f0d5bb0f"
+    },
+    {
+      "mode": "100755",
+      "path": "macos/verify-macos-compatibility.sh",
+      "sha256": "7eda864c33a5609ece557bbec8275a2c48621096998b1c5ea93fa105d18b960b"
+    }
+  ],
+  "schema": 1,
+  "upstream": {
+    "commit": "6166ca0759aad5c56d4c71128a0aea13dbcb67ad",
+    "repository": "https://github.com/omacom/try-omarchy",
+    "tag": "v0.6.0",
+    "tarball_url": "https://codeload.github.com/omacom/try-omarchy/tar.gz/6166ca0759aad5c56d4c71128a0aea13dbcb67ad"
+  }
+}

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!--
+    Try FydeOS app icon.
+
+    Original artwork for this project: a display with a power glyph, standing for
+    "boot this OS here". It deliberately uses no FydeOS or ChromeOS brand assets,
+    which are their owners' trademarks.
+  -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2c3050"/>
+      <stop offset="1" stop-color="#12141d"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.05"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff5c93"/>
+      <stop offset="1" stop-color="#e5125f"/>
+    </linearGradient>
+    <mask id="powerGap">
+      <rect x="0" y="0" width="1024" height="1024" fill="#ffffff"/>
+      <rect x="492" y="416" width="40" height="38" fill="#000000"/>
+    </mask>
+  </defs>
+
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#tile)"/>
+
+  <rect x="228" y="286" width="568" height="356" rx="36"
+        fill="url(#glass)" stroke="#ffffff" stroke-opacity="0.5" stroke-width="14"/>
+
+  <rect x="452" y="642" width="120" height="46" fill="#ffffff" fill-opacity="0.5"/>
+  <rect x="368" y="688" width="288" height="26" rx="13" fill="#ffffff" fill-opacity="0.5"/>
+
+  <circle cx="512" cy="468" r="78" fill="url(#accent)"/>
+
+  <g mask="url(#powerGap)">
+    <circle cx="512" cy="474" r="38" fill="none" stroke="#ffffff" stroke-width="16"/>
+  </g>
+  <rect x="504" y="410" width="16" height="62" rx="8" fill="#ffffff"/>
+</svg>

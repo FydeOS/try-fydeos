@@ -1,0 +1,142 @@
+import AppKit
+import TryFydeOSAppModel
+import TryFydeOSCore
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let defaults = UserDefaults.standard
+    private let host = HostInfo.current()
+    private let log = AppLog()
+    private var controller: AppController!
+    private var window: StartMenuWindow!
+    private var signalSources: [DispatchSourceSignal] = []
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let workspace = Workspace(url: Preferences.workspaceURL(store: defaults))
+        log.write("app started, version \(appVersion), workspace \(workspace.url.path)")
+        controller = AppController(driver: CoreVMDriver(workspace: workspace, log: log))
+        window = StartMenuWindow(controller: controller, preferences: Preferences.load(from: defaults, host: host), host: host)
+        window.onPreferencesChange = { [weak self] prefs in
+            guard let self else { return }
+            prefs.save(to: self.defaults)
+        }
+        window.onLaunch = { [weak self] prefs in self?.controller.launch(prefs.launchOptions) }
+        controller.onStateChange = { [weak self] state in self?.stateChanged(state) }
+        controller.onError = { [weak self] message in self?.showError(message) }
+        controller.onReadyToQuit = { [weak self] in
+            self?.log.write("VM stopped, terminating")
+            NSApp.reply(toApplicationShouldTerminate: true)
+        }
+        NSApp.mainMenu = makeMainMenu()
+
+        let center = NSWorkspace.shared.notificationCenter
+        center.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.log.write("host will sleep")
+            self?.controller.willSleep()
+        }
+        center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.log.write("host did wake")
+            self?.controller.didWake()
+        }
+        for sig in [SIGTERM, SIGINT, SIGHUP] {
+            signal(sig, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
+            source.setEventHandler { [weak self] in
+                self?.log.write("received signal \(sig), quitting")
+                // Not from inside this main-queue block: terminateLater spins a nested run loop, and the
+                // VM's exit event, itself a main-queue block, could never run while this one is on the stack.
+                NSApp.performSelector(onMainThread: #selector(NSApplication.terminate(_:)), with: nil, waitUntilDone: false)
+            }
+            source.resume()
+            signalSources.append(source)
+        }
+        showStartMenu()
+        // Hidden test hook: `open --args -autoLaunch YES` launches without a click and persists nothing.
+        if defaults.volatileDomain(forName: UserDefaults.argumentDomain)["autoLaunch"] != nil, defaults.bool(forKey: "autoLaunch") {
+            log.write("autoLaunch requested on the command line")
+            controller.launch(Preferences.load(from: defaults, host: host).launchOptions)
+        }
+    }
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+    }
+
+    private func showStartMenu() {
+        NSApp.setActivationPolicy(.regular)
+        window.refresh()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func stateChanged(_ state: AppState) {
+        log.write("state \(state)")
+        window.refresh()
+        switch state {
+        case .starting, .running:
+            if window.isVisible && !controller.quitPending {
+                window.orderOut(nil)
+                NSApp.setActivationPolicy(.accessory)
+            }
+        case .notRunning, .failed:
+            if !controller.quitPending { showStartMenu() }
+        case .preparing, .shuttingDown:
+            break
+        }
+    }
+
+    private func showError(_ message: String) {
+        log.write("error: \(message)")
+        showStartMenu()
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = L(.errorAlertTitle)
+        alert.informativeText = message
+        alert.addButton(withTitle: L(.ok))
+        alert.beginSheetModal(for: window)
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if controller.requestQuit() { return .terminateNow }
+        log.write("quit requested while the VM runs; running the shutdown ladder")
+        return .terminateLater
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        log.write("app exiting")
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        window.refresh()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        return true
+    }
+
+    @objc private func showAbout(_ sender: Any?) {
+        let credits = NSAttributedString(string: L(.aboutCredits), attributes: [.font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)])
+        NSApp.orderFrontStandardAboutPanel(options: [.applicationName: L(.windowTitle), .credits: credits])
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func makeMainMenu() -> NSMenu {
+        let main = NSMenu()
+        let appItem = NSMenuItem()
+        main.addItem(appItem)
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: L(.menuAbout), action: #selector(showAbout(_:)), keyEquivalent: "").target = self
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: L(.menuHide), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: L(.menuQuit), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appItem.submenu = appMenu
+
+        let windowItem = NSMenuItem()
+        main.addItem(windowItem)
+        let windowMenu = NSMenu(title: L(.menuWindow))
+        windowMenu.addItem(withTitle: L(.menuClose), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        windowItem.submenu = windowMenu
+        return main
+    }
+}
