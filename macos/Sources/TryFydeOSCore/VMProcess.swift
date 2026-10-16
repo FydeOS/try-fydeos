@@ -147,6 +147,9 @@ public final class Lifecycle: @unchecked Sendable {
     public let process: VMProcess
     public let qmpSocket: String
     public var powerdownTimeout: TimeInterval = 20
+    /// FydeOS runs Chrome with --aura-legacy-power-button: the first press opens
+    /// the power menu, a second press while it is open shuts down.
+    public var powerButtonRepeatDelay: TimeInterval = 2
     public var quitTimeout: TimeInterval = 5
     public var termTimeout: TimeInterval = 3
     public var log: (String) -> Void = { _ in }
@@ -210,11 +213,13 @@ public final class Lifecycle: @unchecked Sendable {
     public func shutdown(force: Bool = false) -> ExitStatus {
         if let status = process.exitStatus { return status }
         if !force {
-            log("system_powerdown, waiting \(Int(powerdownTimeout)) s")
+            log("system_powerdown twice, \(Int(powerButtonRepeatDelay)) s apart, waiting \(Int(powerdownTimeout)) s")
             if let client = connect() {
                 defer { client.close() }
                 do { try client.systemPowerdown() } catch { log("system_powerdown: \(error)") }
-                if let status = process.wait(timeout: powerdownTimeout) { return status }
+                if let status = process.wait(timeout: powerButtonRepeatDelay) { return status }
+                do { try client.systemPowerdown() } catch { log("second system_powerdown: \(error)") }
+                if let status = process.wait(timeout: powerdownTimeout - powerButtonRepeatDelay) { return status }
             }
         }
         log("quit, waiting \(Int(quitTimeout)) s")

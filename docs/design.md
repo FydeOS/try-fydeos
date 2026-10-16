@@ -150,11 +150,16 @@ Two things learned in milestone 3 that milestone 4 must do:
 - Guest suspend: an idle FydeOS guest entered suspend on 2026-10-14 and did
   not wake. Not yet root-caused; relevant guest knobs are powerd prefs.
 - Clean guest shutdown: QMP `system_powerdown` reaches the guest (the
-  kernel has `ACPI_BUTTON` and `KEYBOARD_GPIO`), but FydeOS treats a
-  momentary power-button press as a menu request, not a shutdown, so the
-  ladder always falls through to QMP `quit` after 20 s. Candidates: a
-  guest agent (`qemu-ga` `guest-shutdown`) or a powerd pref in
-  `project-vmware`. Measured in milestone 2.
+  kernel has `ACPI_BUTTON`; powerd accepts the ACPI button because the
+  vmware boards set `USE=legacy_power_button`, which also gives Chrome
+  `--aura-legacy-power-button`). In that mode ash's
+  `OnLegacyPowerButtonEvent` opens the power menu on the first press and
+  calls `RequestShutdown` on a second press while the menu is open. One
+  press therefore only shows the menu, which is why the ladder fell
+  through to `quit` in milestone 2. Fixed in the ladder: two
+  `system_powerdown` presses 2 s apart; measured on 2026-10-16, the guest
+  shut itself down 6.7 s after the second press (`SHUTDOWN` with reason
+  `guest-shutdown`). A press is ignored while the guest screen is off.
 - Default workspace path: `VM/v1` on Wei's Mac still holds the
   September attempt's VM; the app refuses it as foreign. Decide whether to
   remove it or move the default.
