@@ -1,0 +1,31 @@
+From: Try FydeOS contributors
+Subject: [PATCH] virtio-gpu-virgl: flush the GL context after a 2D upload
+
+Applies after Try Omarchy's QEMU patches.
+
+The guest's 2D path (frecon, the firmware console) uploads its framebuffer
+with TRANSFER_TO_HOST_2D, which virglrenderer turns into a texture
+sub-image upload in its own GL context. Nothing flushes that context: the
+renderer only flushes when a client creates a fence, and the kernel's 2D
+path never does. The Cocoa display samples the same texture from a second
+context, so it keeps showing the last flushed contents. Small uploads
+happen to get through the driver at once; a full backing-size console
+framebuffer does not, and typed characters only appear after the next
+modeset. Flush right after the upload, while the renderer's context is
+current.
+
+--- a/hw/display/virtio-gpu-virgl.c
++++ b/hw/display/virtio-gpu-virgl.c
+@@ -664,6 +664,12 @@ static void virgl_cmd_transfer_to_host_2d(VirtIOGPU *g,
+                                       0,
+                                       (struct virgl_box *)&box,
+                                       t2d.offset, NULL, 0);
++    /*
++     * A 2D upload carries no fence, so nothing flushes it out of the
++     * renderer's context before the display samples the texture from its
++     * own context.
++     */
++    glFlush();
+ }
+ 
+ static void virgl_cmd_transfer_to_host_3d(VirtIOGPU *g,

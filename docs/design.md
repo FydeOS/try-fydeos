@@ -50,11 +50,12 @@ shutdown. Modeled on Try Omarchy, written fresh.
   core bottles for glib, pixman, SDL, libusb, compression libraries.
   macOS deployment target 15.0.
 - Overlay: our own `qemu-cocoa-product-identity.patch` (process name,
-  menus, quit prompt, icon file) and `qemu-cocoa-window-master.patch`
+  menus, quit prompt, icon file), `qemu-cocoa-window-master.patch`
   (resizable window drives the guest mode, ratio locked once settled,
-  first UI-info report at launch). Everything else is upstream's patch set
-  unchanged; unused patches stay because dropping a Cocoa patch mid-chain
-  invalidates the ones after it.
+  first UI-info report at launch) and `qemu-virgl-flush-2d-upload.patch`
+  (a `glFlush` after each TRANSFER_TO_HOST_2D, see risks). Everything else
+  is upstream's patch set unchanged; unused patches stay because dropping
+  a Cocoa patch mid-chain invalidates the ones after it.
 - Later addition: spice-protocol headers and `--enable-spice-protocol`, so
   the `qemu-vdagent` chardev exists for guest clipboard.
 
@@ -185,3 +186,14 @@ Why this layout (measured in milestones 3 and 4):
   until a factory reset.
 - Window mode sizing: resolved by the window-master overlay patch
   (milestone 2); the initial window is upstream's 75% 16:9 frame.
+- Console (frecon) updates lost (fixed host-side): with the guest mode in
+  backing pixels, typed characters on Ctrl-Alt-F2 appeared only after the
+  next modeset. Measured 2026-10-19: frecon issued DIRTYFB per key, the host
+  received the flush, dirtied the layer and rendered without GL error, yet
+  drew stale pixels. The kernel's 2D upload carries no fence, so
+  virglrenderer never flushes its context (its only `glFlush` is in fence
+  creation, which Chrome's 3D path triggers every frame) and the Cocoa
+  layer's context keeps sampling the old texture; small uploads at the
+  points-size mode got through by luck. `qemu-virgl-flush-2d-upload.patch`
+  flushes right after the upload. Bisected over the five runtime builds,
+  verified by typing in a scratch VM.
