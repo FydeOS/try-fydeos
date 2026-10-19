@@ -76,9 +76,15 @@ public final class CoreVMDriver: VMDriver, @unchecked Sendable {
                 let loc = try locations()
                 let lock = try takeLock()
                 log.linkRuns(workspace.runsDir)
-                let metadata = try workspace.prepare(lock: lock, locations: loc) { spec, image in
-                    log.write("verifying sha256 of \(image.path) (\(spec.image.bytes) bytes, once per VM)")
+                var unpackStart: Date?
+                let metadata = try workspace.prepare(lock: lock, locations: loc) { bytes, total in
+                    if unpackStart == nil {
+                        unpackStart = Date()
+                        log.write("unpacking the FydeOS image into \(workspace.disk.path) (\(total) bytes)")
+                    }
+                    deliver(.preparing(bytes: bytes, total: total))
                 }
+                if let unpackStart { log.write("unpacked in \(String(format: "%.1f", Date().timeIntervalSince(unpackStart))) s") }
                 let session = try VMSession.launch(options: options, locations: loc, workspace: workspace, lock: lock,
                                                    metadata: metadata) { log.write("run: \($0)") }
                 setSession(session)

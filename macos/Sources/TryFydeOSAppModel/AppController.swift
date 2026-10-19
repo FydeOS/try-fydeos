@@ -3,7 +3,7 @@ import TryFydeOSCore
 
 public enum AppState: Equatable, Sendable {
     case notRunning(String?)
-    case preparing
+    case preparing(bytes: Int64, total: Int64)
     case starting
     case running(since: Date)
     case shuttingDown
@@ -31,6 +31,7 @@ public enum AppState: Equatable, Sendable {
 
 /// What the driver reports. `.exited` and `.failed` both mean nothing is running any more.
 public enum VMEvent: Equatable, Sendable {
+    case preparing(bytes: Int64, total: Int64)
     case starting
     case running
     case exited(ExitStatus)
@@ -81,7 +82,7 @@ public final class AppController {
 
     public func launch(_ options: LaunchOptions) {
         guard canLaunch else { return }
-        state = .preparing
+        state = .preparing(bytes: 0, total: 0)
         driver.launch(options) { [weak self] in self?.handle($0) }
     }
 
@@ -116,8 +117,11 @@ public final class AppController {
 
     public func handle(_ event: VMEvent) {
         switch event {
+        case .preparing(let bytes, let total):
+            guard case .preparing = state else { return }
+            state = .preparing(bytes: bytes, total: total)
         case .starting:
-            guard state == .preparing else { return }
+            guard case .preparing = state else { return }
             state = .starting
             if quitPending { shutDown() }
         case .running:

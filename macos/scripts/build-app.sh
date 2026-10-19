@@ -1,15 +1,12 @@
 #!/bin/bash
-# Assemble and sign dist/Try FydeOS.app. The factory image ships beside the app, not in it.
-#   --with-image           also clone the factory image into Resources/factory (development only)
+# Assemble and sign dist/Try FydeOS.app with the zstd factory image in Resources/factory.
 #   --sign-identity ID     codesign identity (default "-", ad hoc)
 set -euo pipefail
 
-usage() { sed -n '2,4p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
-image=0
+usage() { sed -n '2,3p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 identity=-
 while [ $# -gt 0 ]; do
     case "$1" in
-        --with-image) image=1 ;;
         --sign-identity) [ $# -ge 2 ] || usage; identity=$2; shift ;;
         *) usage ;;
     esac
@@ -32,6 +29,15 @@ die() { echo "build-app: $*" >&2; exit 1; }
 count=$(find "$runtime_src" -type f | wc -l | tr -d ' ')
 [ "$count" = 17 ] || die "runtime has $count files, expected 17"
 ls "$repo"/firmware/*.fd >/dev/null 2>&1 || die "no firmware in $repo/firmware (make firmware)"
+file=$(plutil -extract image.file raw -o - "$repo/factory/spec.json")
+bytes=$(plutil -extract image.bytes raw -o - "$repo/factory/spec.json")
+sha=$(plutil -extract image.sha256 raw -o - "$repo/factory/spec.json")
+image="$repo/factory/$file"
+[ -f "$image" ] || die "factory image $image missing"
+size=$(stat -f %z "$image")
+[ "$size" = "$bytes" ] || die "factory image $image is $size bytes, spec says $bytes"
+say "checking sha256 of $image"
+[ "$(openssl dgst -sha256 -r "$image" | cut -d' ' -f1)" = "$sha" ] || die "factory image $image does not match the spec's sha256"
 
 say "swift build -c release"
 (cd "$repo/macos" && swift build -c release --product TryFydeOSApp)
@@ -51,17 +57,7 @@ cp "$icon" "$res/TryFydeOS.icns"
 ditto "$runtime_src" "$res/runtime"
 cp "$repo"/firmware/*.fd "$res/firmware/"
 cp "$repo/factory/spec.json" "$res/factory/spec.json"
-
-if [ "$image" = 1 ]; then
-    file=$(plutil -extract image.file raw -o - "$repo/factory/spec.json")
-    bytes=$(plutil -extract image.bytes raw -o - "$repo/factory/spec.json")
-    src="$repo/factory/$file"
-    [ -f "$src" ] || die "factory image $src missing (drop --with-image)"
-    size=$(stat -f %z "$src")
-    [ "$size" = "$bytes" ] || die "factory image $src is $size bytes, spec says $bytes"
-    say "cloning $file"
-    cp -c "$src" "$res/factory/$file"
-fi
+cp -c "$image" "$res/factory/$file" 2>/dev/null || cp "$image" "$res/factory/$file"
 
 # Launch Services labels the Dock tile and menu bar with the executable's file name.
 mv "$res/runtime/bin/qemu-system-aarch64" "$res/runtime/bin/Try FydeOS"

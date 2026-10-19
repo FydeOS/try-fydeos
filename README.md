@@ -15,7 +15,7 @@ the FydeOS image in `dist/Try FydeOS-<version>.dmg`. No Developer ID yet.
 ## Layout
 
 ```
-Makefile          doctor · fetch · runtime · firmware · import-image · prepare · run · icon · app · app-run · dmg · dmg-stage · test
+Makefile          doctor · fetch · runtime · firmware · prepare · run · icon · app · app-run · dmg · dmg-stage · test
 runtime/          QEMU runtime build: lock.json, runtime.py, overlay patches, entitlements
 firmware/         edk2 UEFI pair pinned by SHA-256
 factory/          spec.json describing the pinned FydeOS factory image
@@ -43,24 +43,19 @@ make sync           # workstation -> Mac
 make doctor         # on the Mac: toolchain, pins, capabilities
 make runtime        # build the QEMU runtime (20-40 min first time)
 make firmware       # extract the pinned edk2 pair from the pinned QEMU tarball
-make import-image   # copy and verify factory/<image> into the app's image store
-make app            # build, assemble and sign dist/Try FydeOS.app (APP_ARGS=--with-image for development)
+make app            # build, assemble and sign dist/Try FydeOS.app with factory/<image>.zst inside
 make app-run        # open the bundle
 make dmg            # dist/Try FydeOS-<version>.dmg (DMG_ARGS='--sign-identity ID --notarize-profile P')
 make dmg-stage      # only stage the DMG layout in dist/stage/
 ```
 
-The app does not carry the 7 GB FydeOS image: Gatekeeper scans the whole
-bundle on the first launch of every new signature, which took 43 s with
-the image inside. The image lives in an image store,
-`~/Library/Application Support/Try FydeOS/factory/` (`TRY_FYDEOS_FACTORY_DIR`
-overrides it), next to a `<file>.verified.json` written after one full
-SHA-256 check. The start menu's "FydeOS image" row installs it from the
-first of: `TRY_FYDEOS_FACTORY_IMAGE`, the bundle's own `Resources/factory`
-(`--with-image` builds), the repository's `factory/`, or the app's
-folder (`<file>` or `FydeOS/<file>`, the DMG layout); otherwise Install…
-asks for the file. `tryfydeos import-image [PATH]` does the same from the
-command line. New VMs are cloned from the store.
+The app carries the FydeOS image zstd-compressed (1.36 GB) in
+`Contents/Resources/factory/`. Preparing a VM unpacks it with the bundled
+`zstd` into the workspace (about 3 s on an M4), checks the raw size and
+grows the file, sparse, to the 64 GiB `diskBytes` of `factory/spec.json`.
+`TRY_FYDEOS_FACTORY_IMAGE` points at another `.zst`; in the repository the
+image is `factory/<file>`. Factory reset deletes the disk; the next launch
+unpacks again.
 
 The app's VM workspace defaults to `~/Library/Application Support/Try FydeOS/VM/v1`;
 point it elsewhere with `defaults write io.fydeos.tryfydeos workspace <dir>` or

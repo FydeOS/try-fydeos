@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build dist/Try FydeOS-<version>.dmg: the app, FydeOS/<image>, an Applications link and README.txt.
+# Build dist/Try FydeOS-<version>.dmg: the app, an Applications link and README.txt.
 #   --sign-identity ID       codesign identity for the DMG (default "-", ad hoc)
 #   --notarize-profile NAME  notarytool keychain profile; submit, wait and staple (skipped when absent)
 #   --stage-only             stop after staging dist/stage/
@@ -24,7 +24,6 @@ repo=$(cd "$(dirname "$0")/../.." && pwd)
 app="$repo/dist/Try FydeOS.app"
 stage="$repo/dist/stage"
 spec="$repo/factory/spec.json"
-store="${TRY_FYDEOS_FACTORY_DIR:-$HOME/Library/Application Support/Try FydeOS/factory}"
 
 say() { echo "package-dmg: $*"; }
 die() { echo "package-dmg: $*" >&2; exit 1; }
@@ -33,29 +32,17 @@ start=$(date +%s)
 [ -d "$app" ] || die "no $app (make app)"
 file=$(plutil -extract image.file raw -o - "$spec")
 bytes=$(plutil -extract image.bytes raw -o - "$spec")
-sha=$(plutil -extract image.sha256 raw -o - "$spec")
-[ ! -e "$app/Contents/Resources/factory/$file" ] || die "$app was built with --with-image; rebuild with make app"
+[ "$(stat -f %z "$app/Contents/Resources/factory/$file" 2>/dev/null)" = "$bytes" ] || die "$app does not carry $file (make app)"
 version=$(plutil -extract CFBundleShortVersionString raw -o - "$app/Contents/Info.plist")
 codesign --verify --strict "$app" || die "$app does not verify"
 
-src=
-for candidate in "$repo/factory/$file" "$store/$file"; do
-    [ -f "$candidate" ] && { src=$candidate; break; }
-done
-[ -n "$src" ] || die "$file not found in $repo/factory or $store"
-[ "$(stat -f %z "$src")" = "$bytes" ] || die "$src is $(stat -f %z "$src") bytes, spec says $bytes"
-say "checking sha256 of $src"
-[ "$(openssl dgst -sha256 -r "$src" | cut -d' ' -f1)" = "$sha" ] || die "$src does not match the spec's sha256"
-
 rm -rf "$stage"
-mkdir -p "$stage/FydeOS"
+mkdir -p "$stage"
 ditto "$app" "$stage/Try FydeOS.app"
-cp -c "$src" "$stage/FydeOS/$file" 2>/dev/null || cp "$src" "$stage/FydeOS/$file"
 ln -s /Applications "$stage/Applications"
 cat > "$stage/README.txt" <<'EOF'
 Drag Try FydeOS to Applications.
-Keep the FydeOS folder next to the app, or move it there; otherwise the app asks for the image and imports it.
-The first launch copies the ~7 GB FydeOS image into ~/Library/Application Support/Try FydeOS.
+The first launch unpacks the FydeOS image into ~/Library/Application Support/Try FydeOS, about 7.5 GB.
 EOF
 say "staged $stage"
 [ "$stage_only" = 0 ] || exit 0

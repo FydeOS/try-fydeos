@@ -45,7 +45,7 @@ let ok = ExitStatus(code: 0, signal: nil)
     let (c, d, box) = makeController()
     #expect(c.canLaunch && !c.canShutDown && c.canFactoryReset)
     c.launch(LaunchOptions(cpus: 6, memoryMiB: 8192))
-    #expect(c.state == .preparing && !c.canLaunch && !c.canShutDown && !c.canFactoryReset)
+    #expect(c.state == .preparing(bytes: 0, total: 0) && !c.canLaunch && !c.canShutDown && !c.canFactoryReset)
     d.emit(.starting)
     #expect(c.state == .starting && c.canShutDown)
     d.emit(.running)
@@ -57,6 +57,16 @@ let ok = ExitStatus(code: 0, signal: nil)
     #expect(d.calls == ["launch 6 8192", "shutDown"])
     #expect(box.states.count == 5 && box.errors.isEmpty && box.quitReady == 0)
     #expect(c.canLaunch)
+}
+
+@Test func prepareProgressUpdatesPreparingOnly() {
+    let (c, d, _) = makeController()
+    c.launch(LaunchOptions())
+    d.emit(.preparing(bytes: 50, total: 100))
+    #expect(c.state == .preparing(bytes: 50, total: 100))
+    d.emit(.starting)
+    d.emit(.preparing(bytes: 100, total: 100))
+    #expect(c.state == .starting)
 }
 
 @Test func guestPowerOffReturnsToNotRunning() {
@@ -83,7 +93,7 @@ let ok = ExitStatus(code: 0, signal: nil)
     #expect(c.state.statusText { _ in "" } == "refusing to use /x: foreign")
     #expect(box.errors == ["refusing to use /x: foreign"])
     c.launch(LaunchOptions())
-    #expect(c.state == .preparing)
+    #expect(c.state == .preparing(bytes: 0, total: 0))
 }
 
 @Test func quitWhileIdleIsImmediate() {

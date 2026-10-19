@@ -1,6 +1,7 @@
 {
   "schema": 1,
-  "image": {"file": "fydeos-arm64-vmware-io-R150-16700.56.0-d20261016.bin", "bytes": 7482718720, "sha256": "22587891305d2ffcb9b7db0b5935fd7f29fe70aad75e235e0f27ec2dda4f1dea", "version": "R150-16700.56.0 dev 2026-10-16 (kernel patch 025)"},
+  "image": {"file": "fydeos-arm64-vmware-io-R150-16700.56.0-d20261019.bin.zst", "bytes": 1355933603, "sha256": "8fb9219e233d683a99ace608cb7c735755a6d17cae5d109bebfe1ed686fad380", "rawBytes": 7482718720, "rawSha256": "2cc9a1b5b1f7c8946c723e38ce9704fd597ba10d73c8addb731b3435d212db61", "version": "R150-16700.56.0 dev 2026-10-19 (kernel 025+026, chromium 0173, idle suspend off)"},
+  "diskBytes": 68719476736,
   "board": "arm64-vmware-io",
   "kernelCommandLine": {
     "grubEntry": "local image A",

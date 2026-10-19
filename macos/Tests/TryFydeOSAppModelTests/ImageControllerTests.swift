@@ -22,7 +22,7 @@ final class FakeImageDriver: ImageDriver {
 
     func finish(installing version: String?) {
         self.version = version
-        completion?(.success(FactoryRecord(file: expectedFile, sha256: "ab", bytes: 1, mtime: 0)))
+        completion?(.success(FactoryRecord(file: expectedFile, sha256: "ab", rawBytes: 1)))
     }
 }
 

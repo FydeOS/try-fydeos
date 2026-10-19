@@ -94,3 +94,26 @@ Windowed aspect ratio: `resizeWindow` locks the window to the guest's
 ratio only once the guest shows the window's own mode, so a transient
 firmware mode cannot pin the window (the ratchet of milestone 2), and
 free resize stays available until then.
+
+## D9. Image bundled zstd-compressed, unpacked per VM, 64 GiB sparse disk (2026-10-19)
+
+The app carries the factory image as `Contents/Resources/factory/<file>.zst`
+(zstd -19). Preparing a VM runs the bundled `runtime/bin/zstd` into
+`.disk.img.preparing` in the workspace, checks the exact raw byte count,
+renames it to `disk.img` and extends it with `truncate` to `diskBytes`
+(64 GiB, sparse); the guest grows its stateful partition on first boot.
+Free space of raw size + 1 GiB is required up front. There is no image
+store, no Install step and no `import-image`.
+
+No SHA-256 after unpacking: zstd checks its frame checksums while
+decompressing and the bundle is code-signed. `rawSha256` in `spec.json` is
+provenance only; `make app` checks the `.zst` size and SHA-256.
+
+Measured on the M4: the compressed image is 1.36 GB, 18% of the 7.48 GB
+raw image; unpacking takes 3.2 s, a SHA-256 of the raw image 13.3 s.
+Gatekeeper's first-launch scan took 47 s for a 7.5 GB bundle against
+1.8 s for 173 MB, which is why the raw image never goes into the bundle.
+
+Rejected: the raw image beside the app in the DMG plus an import into an
+Application Support store (milestone 4). It needed an Install step, a 7.5 GB
+copy or clone and a 13 s verification before the first boot.

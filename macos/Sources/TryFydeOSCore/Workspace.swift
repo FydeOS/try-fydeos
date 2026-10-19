@@ -5,6 +5,7 @@ public enum WorkspaceError: Error, CustomStringConvertible {
     case foreign(String, String)
     case notAPFS(String, String)
     case notPrepared(String)
+    case noSpace(needed: Int64, available: Int64)
     case system(String, Int32)
 
     public var description: String {
@@ -12,6 +13,8 @@ public enum WorkspaceError: Error, CustomStringConvertible {
         case .foreign(let path, let why): return "refusing to use \(path): \(why)"
         case .notAPFS(let path, let fs): return "\(path) is on \(fs), not APFS; copy-on-write clones need APFS"
         case .notPrepared(let path): return "workspace \(path) is not prepared; run 'tryfydeos prepare'"
+        case .noSpace(let needed, let available):
+            return String(format: "not enough free space: %.1f GB needed, %.1f GB available", Double(needed) / 1e9, Double(available) / 1e9)
         case .system(let what, let code): return "\(what): \(String(cString: strerror(code)))"
         }
     }
@@ -20,6 +23,7 @@ public enum WorkspaceError: Error, CustomStringConvertible {
 public struct Metadata: Codable, Equatable, Sendable {
     public var schema = 1
     public var factory: FactoryRecord
+    public var diskBytes: Int64?
     public var mac: String
     public var created: String
 }
@@ -78,6 +82,7 @@ public final class Workspace {
     public var marker: URL { url.appendingPathComponent(Self.markerName) }
     public var lockFile: URL { url.appendingPathComponent(".lock") }
     public var disk: URL { url.appendingPathComponent("disk.img") }
+    var stagingDisk: URL { url.appendingPathComponent(".disk.img.preparing") }
     public var efiVars: URL { url.appendingPathComponent("efi-vars.fd") }
     public var metadataFile: URL { url.appendingPathComponent("metadata.json") }
     public var qmpSocket: URL { url.appendingPathComponent("qmp.sock") }
@@ -135,9 +140,10 @@ public final class Workspace {
         return try? JSONDecoder().decode(Metadata.self, from: data)
     }
 
-    /// Clones the factory image and vars template. Idempotent: a prepared workspace is left alone.
-    public func prepare(lock: StorageLock, spec: FactorySpec, image: URL, varsTemplate: URL,
-                        known: FactoryRecord? = nil, beforeHashing: () -> Void = {}) throws -> Metadata {
+    /// Unpacks the zstd factory image into a sparse disk of `spec.diskBytes` and clones the vars
+    /// template. Idempotent: a prepared workspace is left alone.
+    public func prepare(lock: StorageLock, spec: FactorySpec, image: URL, zstd: URL, varsTemplate: URL,
+                        progress: (_ bytesWritten: Int64, _ totalBytes: Int64) -> Void = { _, _ in }) throws -> Metadata {
         precondition(lock.path == lockFile.path && lock.fd >= 0)
         if isPrepared {
             guard let existing = loadMetadata() else {
@@ -145,13 +151,56 @@ public final class Workspace {
             }
             return existing
         }
-        let record = try spec.verify(imageAt: image, known: known, beforeHashing: beforeHashing)
-        for leftover in [metadataFile, disk, efiVars] { try? FileManager.default.removeItem(at: leftover) }
+        let fm = FileManager.default
+        for leftover in [metadataFile, disk, efiVars, stagingDisk] { try? fm.removeItem(at: leftover) }
+        let raw = spec.image.rawBytes
+        var fs = statfs()
+        guard statfs(url.path, &fs) == 0 else { throw WorkspaceError.system("statfs \(url.path)", errno) }
+        let available = Int64(fs.f_bavail) * Int64(fs.f_bsize)
+        guard available >= raw + (1 << 30) else { throw WorkspaceError.noSpace(needed: raw + (1 << 30), available: available) }
         try Self.clone(varsTemplate, to: efiVars)
-        try Self.clone(image, to: disk)
-        let metadata = Metadata(factory: record, mac: VMConfig.randomMAC(), created: utcTimestamp())
+        try unpack(image, zstd: zstd, to: stagingDisk, rawBytes: raw, progress: progress)
+        guard rename(stagingDisk.path, disk.path) == 0 else { throw WorkspaceError.system("rename \(stagingDisk.path) -> \(disk.path)", errno) }
+        guard truncate(disk.path, off_t(spec.diskBytes)) == 0 else { throw WorkspaceError.system("truncate \(disk.path)", errno) }
+        let metadata = Metadata(factory: FactoryRecord(file: spec.image.file, sha256: spec.image.sha256, rawBytes: raw),
+                                diskBytes: spec.diskBytes, mac: VMConfig.randomMAC(), created: utcTimestamp())
         try writeJSON(metadata, to: metadataFile)
         return metadata
+    }
+
+    /// zstd checks its frame checksums while decompressing; the size check catches a truncated or foreign image.
+    private func unpack(_ image: URL, zstd: URL, to output: URL, rawBytes: Int64,
+                        progress: (Int64, Int64) -> Void) throws {
+        var done = false
+        defer { if !done { try? FileManager.default.removeItem(at: output) } }
+        let process = Process()
+        process.executableURL = zstd
+        process.arguments = ["-d", "-q", "-f", "-o", output.path, image.path]
+        let stderr = Pipe()
+        process.standardError = stderr
+        process.standardOutput = FileHandle.nullDevice
+        progress(0, rawBytes)
+        try process.run()
+        func written() -> Int64 {
+            ((try? FileManager.default.attributesOfItem(atPath: output.path))?[.size] as? NSNumber)?.int64Value ?? 0
+        }
+        while process.isRunning {
+            usleep(250_000)
+            progress(min(written(), rawBytes), rawBytes)
+        }
+        process.waitUntilExit()
+        let message = String(decoding: stderr.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard process.terminationStatus == 0 else {
+            throw ConfigError.invalid("unpacking \(image.path) failed (zstd exit \(process.terminationStatus)): \(message)")
+        }
+        let size = written()
+        guard size == rawBytes else {
+            throw ConfigError.invalid("\(image.path) unpacked to \(size) bytes, spec says \(rawBytes)")
+        }
+        guard chmod(output.path, 0o600) == 0 else { throw WorkspaceError.system("chmod \(output.path)", errno) }
+        progress(size, rawBytes)
+        done = true
     }
 
     /// Deletes the VM's disk, variables and metadata. Never touches runs/, the marker, the lock or the directory.

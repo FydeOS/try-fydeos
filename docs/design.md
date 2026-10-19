@@ -89,7 +89,7 @@ why `gl=on` is the default and why the tablet is virtio, not USB.
 ### Launcher: Swift, QEMU owns the window
 
 - `TryFydeOSCore` (library, unit-tested): VM configuration to argv,
-  storage (factory verification, APFS clone, per-VM EFI variables, lock),
+  storage (zstd unpack into a sparse disk, per-VM EFI variables, lock),
   QMP client, lifecycle (powerdown ladder, sleep pause), run logs.
 - `TryFydeOS` (AppKit, `LSUIElement`): start menu, then accessory mode
   while QEMU runs. The rebranded QEMU process owns the window, Dock entry
@@ -110,33 +110,29 @@ why `gl=on` is the default and why the tablet is virtio, not USB.
 
 ### Packaging
 
-`Try FydeOS.app` (~173 MB) holds the runtime, firmware, `spec.json` and
-icon under `Contents/Resources`; the QEMU binary is installed as
-`runtime/bin/Try FydeOS`. The factory image is NOT in the bundle: the DMG
-carries it as `FydeOS/<image>` next to the app, and the start menu
-imports it into `~/Library/Application Support/Try FydeOS/factory/`
-(clonefile on the same volume, streaming copy otherwise, SHA-256 verified
-once, recorded in `<image>.verified.json`). VMs clone from that store.
+`Try FydeOS.app` (~1.4 GB) holds the runtime, firmware, `spec.json`,
+icon and the factory image zstd-compressed (1.36 GB) under
+`Contents/Resources`; the QEMU binary is installed as
+`runtime/bin/Try FydeOS`. Preparing a VM unpacks the image with the
+bundled `zstd` into the workspace, checks the raw size and extends the
+file, sparse, to 64 GiB (D9). There is no image store and no import step.
 Ad-hoc signed during development without `--deep`, so the QEMU
 hypervisor entitlement survives; Developer ID plus notarization are wired
 in `build-app.sh` and `package-dmg.sh` but unexercised. DMG is ULFO via
-`hdiutil`, about 1.5 GB.
+`hdiutil`.
 
 Why this layout (measured in milestones 3 and 4):
 - Install the QEMU binary inside the bundle as
   `Contents/Resources/runtime/bin/Try FydeOS`, as upstream does. Launch
   Services labels the Dock tile and menu bar with the executable's file
   name; the identity patch's `setProcessName` runs too late to change it.
-- Keep the factory image OUT of the app bundle. On the first launch of
+- Bundle the factory image compressed, never raw. On the first launch of
   every new code signature, Gatekeeper runs an XProtect "direct malware
-  and dylib scan" of the whole bundle before `main` runs (measured in the
-  system log on 2026-10-16: 43 s of a 47 s stall, the process parked in
-  `_dyld_start`; later launches are cached by code hash and start in 1 s).
-  Scan time scales with bundle size, so a 7 GB image means ~45 s of
-  nothing happening after the click, for ad-hoc and notarized builds
-  alike. Ship the image beside the app in the DMG (or download it on
-  first run) and copy or clone it into Application Support from the start
-  menu, with progress shown. The bundle itself stays ~170 MB.
+  and dylib scan" of the whole bundle before `main` runs (measured on
+  2026-10-16 and 2026-10-19: 47 s for the 7.5 GB bundle with the raw
+  image, 1.8 s for 173 MB without it; later launches are cached by code hash). Scan time
+  scales with bundle size; zstd -19 brings the image to 18% of raw, and
+  unpacking takes 3.2 s on an M4 (D9).
 
 ## Milestones
 
@@ -147,7 +143,8 @@ Why this layout (measured in milestones 3 and 4):
    workstation.
 3. App: start menu, supervision, shutdown ladder, sleep pause, logs.
    Check: every path clicked by hand.
-4. Package: bundle, ad-hoc signature, DMG. Developer ID when available.
+4. Package: bundle with the zstd image (D9), ad-hoc signature, DMG.
+   Developer ID when available.
 5. Integrations: clipboard via `qemu-vdagent`, shared folder, port
    forwards, then guest-side display zoom in `project-vmware`.
 
@@ -181,8 +178,10 @@ Why this layout (measured in milestones 3 and 4):
   `system_powerdown` presses 2 s apart; measured on 2026-10-16, the guest
   shut itself down 6.7 s after the second press (`SHUTDOWN` with reason
   `guest-shutdown`). A press is ignored while the guest screen is off.
-- Default workspace path: `VM/v1` on Wei's Mac still holds the
-  September attempt's VM; the app refuses it as foreign. Decide whether to
-  remove it or move the default.
+- Leftover image store: builds before D9 imported the raw image into
+  `~/Library/Application Support/Try FydeOS/factory/` (7.5 GB). Nothing
+  reads it any more; it is removed by hand. Workspaces prepared from it
+  keep working (7.5 GB disk, `tryfydeos prepare` notes the older factory)
+  until a factory reset.
 - Window mode sizing: resolved by the window-master overlay patch
   (milestone 2); the initial window is upstream's 75% 16:9 frame.

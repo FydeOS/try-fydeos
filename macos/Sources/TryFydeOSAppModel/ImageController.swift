@@ -1,6 +1,25 @@
 import Foundation
 import TryFydeOSCore
 
+public struct ImportProgress: Equatable, Sendable {
+    public enum Phase: String, Sendable {
+        case copying
+        case verifying
+    }
+
+    public var phase: Phase
+    public var bytes: Int64
+    public var total: Int64
+
+    public init(phase: Phase, bytes: Int64, total: Int64) {
+        self.phase = phase
+        self.bytes = bytes
+        self.total = total
+    }
+
+    public var fraction: Double { total > 0 ? min(1, Double(bytes) / Double(total)) : 0 }
+}
+
 public enum ImageState: Equatable, Sendable {
     case notInstalled(source: URL?)
     case importing(ImportProgress)
@@ -105,7 +124,7 @@ public final class ImageController {
     }
 }
 
-/// `ImageDriver` over the core `FactoryStore`; imports on a background thread.
+/// `ImageDriver` over the image bundled with the app: installed when it is present, nothing to import.
 public final class CoreImageDriver: ImageDriver, @unchecked Sendable {
     private let log: AppLog
     private let locations: () throws -> Locations
@@ -120,7 +139,7 @@ public final class CoreImageDriver: ImageDriver, @unchecked Sendable {
             let loc = try locations()
             return (loc, try FactorySpec.load(loc.factorySpec))
         } catch {
-            log.write("image store: \(error)")
+            log.write("factory image: \(error)")
             return nil
         }
     }
@@ -129,49 +148,15 @@ public final class CoreImageDriver: ImageDriver, @unchecked Sendable {
 
     public func installedVersion() -> String? {
         guard let (loc, spec) = context() else { return nil }
-        let store = loc.factoryStore(spec)
-        let state = store.state
-        log.write("image store \(store.directory.path): \(state)")
-        if case .verified = state { return spec.image.version }
-        return nil
+        let image = loc.factoryImage(spec)
+        log.write("factory image: \(image?.path ?? "not found")")
+        return image == nil ? nil : spec.image.version
     }
 
-    public func detectSource() -> URL? {
-        guard let (loc, spec) = context() else { return nil }
-        let source = FactoryStore.findSource(loc.factoryImportCandidates(spec))
-        log.write("image import source: \(source?.path ?? "none found")")
-        return source
-    }
+    public func detectSource() -> URL? { nil }
 
     public func importImage(from source: URL, progress: @escaping (ImportProgress) -> Void,
                             completion: @escaping (Result<FactoryRecord, Error>) -> Void) {
-        let log = self.log
-        let locations = self.locations
-        let thread = Thread {
-            let start = Date()
-            let result = Result<FactoryRecord, Error> {
-                let loc = try locations()
-                let store = loc.factoryStore(try FactorySpec.load(loc.factorySpec))
-                log.write("image import from \(source.path) into \(store.directory.path) started")
-                var last: (ImportProgress.Phase, Int)?
-                return try store.importImage(from: source) { p in
-                    let permille = Int(p.fraction * 1000)
-                    guard last.map({ $0.0 != p.phase || $0.1 != permille }) ?? true else { return }
-                    if last?.0 != p.phase || permille / 100 != last!.1 / 100 {
-                        log.write("image import: \(p.phase.rawValue) \(permille / 10)%")
-                    }
-                    last = (p.phase, permille)
-                    DispatchQueue.main.async { progress(p) }
-                }
-            }
-            let seconds = String(format: "%.1f", Date().timeIntervalSince(start))
-            switch result {
-            case .success(let record): log.write("image import done in \(seconds) s, sha256 \(record.sha256)")
-            case .failure(let error): log.write("image import failed after \(seconds) s: \(error)")
-            }
-            DispatchQueue.main.async { completion(result) }
-        }
-        thread.name = "image-import"
-        thread.start()
+        completion(.failure(ConfigError.invalid("the FydeOS image ships inside the app; there is nothing to import")))
     }
 }
