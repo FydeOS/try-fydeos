@@ -88,7 +88,7 @@ public final class CoreVMDriver: VMDriver, @unchecked Sendable {
                 let session = try VMSession.launch(options: options, locations: loc, workspace: workspace, lock: lock,
                                                    metadata: metadata) { log.write("run: \($0)") }
                 setSession(session)
-                deliver(.starting)
+                deliver(.starting(pid: session.process.pid))
                 do {
                     try session.waitForQMP()
                 } catch {

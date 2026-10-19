@@ -94,7 +94,10 @@ why `gl=on` is the default and why the tablet is virtio, not USB.
   QMP client, lifecycle (powerdown ladder, sleep pause), run logs.
 - `TryFydeOS` (AppKit, `LSUIElement`): start menu, then accessory mode
   while QEMU runs. The rebranded QEMU process owns the window, Dock entry
-  and menu bar.
+  and menu bar. Once QMP answers, the launcher yields the foreground to the
+  QEMU process, waits until it has resigned, switches to accessory, and
+  activates QEMU once more: the switch always re-fronts the app that
+  preceded the launcher, whatever is in front at the time.
 - Start menu: a fixed-width window of cards (processor cores and memory;
   full screen, on by default, and microphone switches; factory reset behind
   a confirmation alert), the last-run status and a full-width Launch button

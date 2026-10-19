@@ -34,7 +34,7 @@ public enum AppState: Equatable, Sendable {
 /// What the driver reports. `.exited` and `.failed` both mean nothing is running any more.
 public enum VMEvent: Equatable, Sendable {
     case preparing(bytes: Int64, total: Int64)
-    case starting
+    case starting(pid: pid_t)
     case running
     case exited(ExitStatus)
     case failed(String)
@@ -55,6 +55,8 @@ public final class AppController {
         didSet { if state != oldValue { onStateChange?(state) } }
     }
     public private(set) var quitPending = false
+    /// The QEMU process of the current run, from `.starting` until it exits.
+    public private(set) var vmPid: pid_t?
     public var onStateChange: ((AppState) -> Void)?
     public var onError: ((_ title: String, _ message: String) -> Void)?
     public var onReadyToQuit: (() -> Void)?
@@ -118,8 +120,9 @@ public final class AppController {
         case .preparing(let bytes, let total):
             guard case .preparing = state else { return }
             state = .preparing(bytes: bytes, total: total)
-        case .starting:
+        case .starting(let pid):
             guard case .preparing = state else { return }
+            vmPid = pid
             state = .starting
             if quitPending { shutDown() }
         case .running:

@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var controller: AppController!
     private var window: StartMenuWindow!
     private var signalSources: [DispatchSourceSignal] = []
+    private var resignObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let workspace = Workspace(url: Preferences.workspaceURL(store: defaults))
@@ -85,15 +86,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         log.write("state \(state)")
         window.refresh()
         switch state {
-        case .starting, .running:
-            if window.isVisible && !controller.quitPending {
-                window.orderOut(nil)
-                NSApp.setActivationPolicy(.accessory)
+        case .running:
+            guard window.isVisible && !controller.quitPending else { break }
+            if handForegroundToVM() {
+                resignObserver = NotificationCenter.default.addObserver(
+                    forName: NSApplication.didResignActiveNotification, object: NSApp, queue: .main
+                ) { [weak self] _ in self?.retireStartMenu() }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.retireStartMenu() }
+            } else {
+                retireStartMenu()
             }
         case .notRunning, .failed:
             if !controller.quitPending { showStartMenu() }
-        case .preparing, .shuttingDown:
+        case .preparing, .starting, .shuttingDown:
             break
+        }
+    }
+
+    /// QEMU is a spawned child, so nothing activates it; since macOS 14 only
+    /// the active app can pass the foreground on, and only before it resigns.
+    private func handForegroundToVM() -> Bool {
+        guard let pid = controller.vmPid, let vm = NSRunningApplication(processIdentifier: pid) else {
+            log.write("no running application for the VM; foreground not handed over")
+            return false
+        }
+        NSApp.yieldActivation(to: vm)
+        let granted = vm.activate(from: .current, options: [])
+        log.write("foreground handed to QEMU pid \(pid): \(granted ? "granted" : "refused")")
+        return granted
+    }
+
+    /// Runs once the hand-off has completed (the launcher resigned). The
+    /// accessory switch makes AppKit re-front the launcher, which LaunchServices
+    /// resolves to the app that preceded it, whatever is in front; so QEMU is
+    /// activated once more afterwards.
+    private func retireStartMenu() {
+        guard window.isVisible else { return }
+        if let resignObserver {
+            NotificationCenter.default.removeObserver(resignObserver)
+            self.resignObserver = nil
+        }
+        window.orderOut(nil)
+        NSApp.setActivationPolicy(.accessory)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            guard let self else { return }
+            let front = NSWorkspace.shared.frontmostApplication
+            self.log.write("frontmost after retiring the start menu: \(front?.localizedName ?? "none") pid \(front?.processIdentifier ?? 0)")
+            if let pid = self.controller.vmPid, front?.processIdentifier != pid,
+               let vm = NSRunningApplication(processIdentifier: pid) {
+                let granted = vm.activate(options: [])
+                self.log.write("re-activated QEMU pid \(pid): \(granted ? "granted" : "refused")")
+            }
         }
     }
 
