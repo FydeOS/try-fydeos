@@ -36,7 +36,7 @@ public struct Preferences: Equatable, Sendable {
     }
 
     public static func defaults(for host: HostInfo) -> Preferences {
-        Preferences(cpus: min(8, host.logicalCores), memoryMiB: host.memoryMiB >= 16384 ? 8192 : 4096).clamped(to: host)
+        Preferences(cpus: min(8, host.logicalCores), memoryMiB: host.memoryMiB >= 16384 ? 8192 : 4096, fullScreen: true).clamped(to: host)
     }
 
     /// Snaps CPUs and memory to the nearest offered choice at or below the value.
@@ -53,7 +53,7 @@ public struct Preferences: Equatable, Sendable {
         var p = defaults(for: host)
         if store.object(forKey: Key.cpus) != nil { p.cpus = store.integer(forKey: Key.cpus) }
         if store.object(forKey: Key.memoryMiB) != nil { p.memoryMiB = store.integer(forKey: Key.memoryMiB) }
-        p.fullScreen = store.bool(forKey: Key.fullScreen)
+        if store.object(forKey: Key.fullScreen) != nil { p.fullScreen = store.bool(forKey: Key.fullScreen) }
         p.microphone = store.bool(forKey: Key.microphone)
         return p.clamped(to: host)
     }

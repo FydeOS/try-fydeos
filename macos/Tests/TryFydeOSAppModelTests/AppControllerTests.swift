@@ -28,7 +28,7 @@ func makeController() -> (AppController, FakeDriver, Box) {
     let box = Box()
     c.now = { Date(timeIntervalSince1970: 1000) }
     c.onStateChange = { box.states.append($0) }
-    c.onError = { box.errors.append($0) }
+    c.onError = { box.errorTitles.append($0); box.errors.append($1) }
     c.onReadyToQuit = { box.quitReady += 1 }
     return (c, driver, box)
 }
@@ -36,6 +36,7 @@ func makeController() -> (AppController, FakeDriver, Box) {
 final class Box {
     var states: [AppState] = []
     var errors: [String] = []
+    var errorTitles: [String] = []
     var quitReady = 0
 }
 
@@ -83,6 +84,7 @@ let ok = ExitStatus(code: 0, signal: nil)
     d.emit(.starting); d.emit(.running); d.emit(.exited(ExitStatus(code: 1, signal: nil)))
     #expect(c.state == .failed(L(.errorUnexpectedExit, "exit code 1")))
     #expect(box.errors.count == 1 && c.canLaunch)
+    #expect(box.errorTitles == [L(.errorAlertTitle)])
 }
 
 @Test func prepareFailureIsAnError() {
@@ -92,6 +94,7 @@ let ok = ExitStatus(code: 0, signal: nil)
     #expect(c.state == .failed("refusing to use /x: foreign"))
     #expect(c.state.statusText { _ in "" } == "refusing to use /x: foreign")
     #expect(box.errors == ["refusing to use /x: foreign"])
+    #expect(box.errorTitles == [L(.errorLaunchTitle)])
     c.launch(LaunchOptions())
     #expect(c.state == .preparing(bytes: 0, total: 0))
 }

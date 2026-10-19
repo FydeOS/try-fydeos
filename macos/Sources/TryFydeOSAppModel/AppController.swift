@@ -56,7 +56,7 @@ public final class AppController {
     }
     public private(set) var quitPending = false
     public var onStateChange: ((AppState) -> Void)?
-    public var onError: ((String) -> Void)?
+    public var onError: ((_ title: String, _ message: String) -> Void)?
     public var onReadyToQuit: (() -> Void)?
     public var now: () -> Date = Date.init
     private let driver: VMDriver
@@ -131,18 +131,18 @@ public final class AppController {
             } else if status.code == 0 {
                 state = .notRunning(L(.lastRunStopped, status.description))
             } else {
-                fail(L(.errorUnexpectedExit, status.description))
+                fail(L(.errorUnexpectedExit, status.description), title: L(.errorAlertTitle))
             }
             finishQuit()
         case .failed(let message):
-            fail(message)
+            fail(message, title: L(.errorLaunchTitle))
             finishQuit()
         }
     }
 
-    private func fail(_ message: String) {
+    private func fail(_ message: String, title: String) {
         state = .failed(message)
-        if !quitPending { onError?(message) }
+        if !quitPending { onError?(title, message) }
     }
 
     private func finishQuit() {

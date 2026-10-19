@@ -95,9 +95,10 @@ why `gl=on` is the default and why the tablet is virtio, not USB.
 - `TryFydeOS` (AppKit, `LSUIElement`): start menu, then accessory mode
   while QEMU runs. The rebranded QEMU process owns the window, Dock entry
   and menu bar.
-- Start menu: CPUs, memory, window or full screen, microphone, launch,
-  shut down, logs, factory reset with typed confirmation, first-run note
-  about display zoom. Hidden: `forwards` default / `TRY_FYDEOS_FORWARDS`
+- Start menu: a fixed-width window of cards (processor cores and memory;
+  full screen, on by default, and microphone switches; factory reset with
+  typed confirmation), the last-run status and a full-width Launch button
+  that shows the unpack progress. Logs and Quit live in the app menu. Hidden: `forwards` default / `TRY_FYDEOS_FORWARDS`
   (comma-separated host:guest ports on 127.0.0.1), like `workspace`.
 - Storage lock: `flock` on `<vm>/.lock`, taken before preparation, held
   for the app's lifetime and inherited by QEMU through `-add-fd`. Never

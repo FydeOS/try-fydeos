@@ -3,16 +3,27 @@ import Foundation
 /// Every user-visible string of the app. Add a language by adding a table with all keys.
 public enum StringKey: String, CaseIterable, Sendable {
     case windowTitle
+    case subtitle
+    case version
+    case sectionResources
+    case sectionDisplay
+    case sectionReset
     case cpus
+    case cpuValue
     case memory
     case memoryValue
     case fullScreen
+    case fullScreenDetail
     case microphone
-    case launch
-    case shutDown
-    case logs
+    case microphoneDetail
     case factoryReset
-    case quit
+    case factoryResetDetail
+    case resetButton
+    case launch
+    case launchPreparing
+    case launchStarting
+    case launchRunning
+    case launchShuttingDown
     case statusNotRunning
     case statusNotRunningAfter
     case statusPreparing
@@ -26,13 +37,17 @@ public enum StringKey: String, CaseIterable, Sendable {
     case errorNotReady
     case errorBusy
     case errorAlertTitle
+    case errorLaunchTitle
     case resetTitle
     case resetMessage
+    case resetPrompt
     case resetConfirm
     case resetDone
+    case resetFailedTitle
     case cancel
     case ok
     case menuAbout
+    case menuOpenLogs
     case menuHide
     case menuQuit
     case menuWindow
@@ -45,16 +60,27 @@ public enum Strings {
 
     public static let english: [StringKey: String] = [
         .windowTitle: "Try FydeOS",
-        .cpus: "CPUs",
+        .subtitle: "FYDEOS · APPLE SILICON",
+        .version: "Version %@",
+        .sectionResources: "RESOURCES",
+        .sectionDisplay: "DISPLAY & INPUT",
+        .sectionReset: "RESET",
+        .cpus: "Processor cores",
+        .cpuValue: "%d cores",
         .memory: "Memory",
         .memoryValue: "%d GB",
         .fullScreen: "Full screen",
+        .fullScreenDetail: "FydeOS opens full screen; the Mac menu bar and Dock stay hidden.",
         .microphone: "Microphone",
-        .launch: "Launch",
-        .shutDown: "Shut Down",
-        .logs: "Logs",
-        .factoryReset: "Factory Reset…",
-        .quit: "Quit",
+        .microphoneDetail: "Optional. Apps in FydeOS can record from your Mac microphone.",
+        .factoryReset: "Factory reset",
+        .factoryResetDetail: "Erase this VM and return it to factory settings.",
+        .resetButton: "Reset FydeOS…",
+        .launch: "Launch FydeOS",
+        .launchPreparing: "Preparing FydeOS…",
+        .launchStarting: "Launching FydeOS…",
+        .launchRunning: "Running",
+        .launchShuttingDown: "Shutting down…",
         .statusNotRunning: "Not running",
         .statusNotRunningAfter: "Not running. %@",
         .statusPreparing: "Preparing…",
@@ -64,17 +90,21 @@ public enum Strings {
         .statusShuttingDown: "Shutting down…",
         .lastRunShutDown: "Last run shut down by Try FydeOS (%@).",
         .lastRunStopped: "Last run: FydeOS stopped (%@).",
-        .errorUnexpectedExit: "FydeOS stopped unexpectedly (%@). See Logs.",
-        .errorNotReady: "FydeOS did not start: %@ (%@). See Logs.",
+        .errorUnexpectedExit: "FydeOS stopped unexpectedly (%@). See the logs in the Try FydeOS menu.",
+        .errorNotReady: "FydeOS did not start: %@ (%@). See the logs in the Try FydeOS menu.",
         .errorBusy: "Try FydeOS is busy. Wait for the current operation to finish.",
         .errorAlertTitle: "Try FydeOS",
-        .resetTitle: "Factory reset",
-        .resetMessage: "This erases FydeOS and everything stored in it. The next launch starts from the factory image. Type “%@” to confirm.",
-        .resetConfirm: "Erase",
-        .resetDone: "Factory reset done.",
+        .errorLaunchTitle: "Try FydeOS couldn’t start",
+        .resetTitle: "Reset FydeOS to factory settings?",
+        .resetMessage: "This permanently erases everything in this FydeOS virtual machine, including apps, files, accounts and settings. This cannot be undone.",
+        .resetPrompt: "Type %@ to confirm",
+        .resetConfirm: "Reset",
+        .resetDone: "FydeOS has been reset.",
+        .resetFailedTitle: "FydeOS couldn’t be reset",
         .cancel: "Cancel",
         .ok: "OK",
         .menuAbout: "About Try FydeOS",
+        .menuOpenLogs: "Open Logs Folder",
         .menuHide: "Hide Try FydeOS",
         .menuQuit: "Quit Try FydeOS",
         .menuWindow: "Window",

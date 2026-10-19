@@ -21,7 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         window.onLaunch = { [weak self] prefs in self?.launch(prefs) }
         controller.onStateChange = { [weak self] state in self?.stateChanged(state) }
-        controller.onError = { [weak self] message in self?.showError(message) }
+        controller.onError = { [weak self] title, message in self?.showError(title: title, message: message) }
         controller.onReadyToQuit = { [weak self] in
             self?.log.write("VM stopped, terminating")
             NSApp.reply(toApplicationShouldTerminate: true)
@@ -97,12 +97,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func showError(_ message: String) {
+    private func showError(title: String, message: String) {
         log.write("error: \(message)")
         showStartMenu()
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = L(.errorAlertTitle)
+        alert.messageText = title
         alert.informativeText = message
         alert.addButton(withTitle: L(.ok))
         alert.beginSheetModal(for: window)
@@ -133,12 +133,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    @objc private func openLogs(_ sender: Any?) {
+        try? FileManager.default.createDirectory(at: AppLog.directory, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(AppLog.directory)
+    }
+
     private func makeMainMenu() -> NSMenu {
         let main = NSMenu()
         let appItem = NSMenuItem()
         main.addItem(appItem)
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: L(.menuAbout), action: #selector(showAbout(_:)), keyEquivalent: "").target = self
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: L(.menuOpenLogs), action: #selector(openLogs(_:)), keyEquivalent: "").target = self
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: L(.menuHide), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(.separator())
@@ -150,6 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let windowMenu = NSMenu(title: L(.menuWindow))
         windowMenu.addItem(withTitle: L(.menuClose), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         windowItem.submenu = windowMenu
+        NSApp.windowsMenu = windowMenu
         return main
     }
 }

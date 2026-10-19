@@ -24,9 +24,9 @@ func scratchDefaults() -> UserDefaults {
 }
 
 @Test func defaultsDependOnHost() {
-    #expect(Preferences.defaults(for: m4) == Preferences(cpus: 8, memoryMiB: 8192))
-    #expect(Preferences.defaults(for: big) == Preferences(cpus: 8, memoryMiB: 8192))
-    #expect(Preferences.defaults(for: small) == Preferences(cpus: 4, memoryMiB: 4096))
+    #expect(Preferences.defaults(for: m4) == Preferences(cpus: 8, memoryMiB: 8192, fullScreen: true))
+    #expect(Preferences.defaults(for: big) == Preferences(cpus: 8, memoryMiB: 8192, fullScreen: true))
+    #expect(Preferences.defaults(for: small) == Preferences(cpus: 4, memoryMiB: 4096, fullScreen: true))
     #expect(Preferences.defaults(for: HostInfo(logicalCores: 8, memoryMiB: 16384)).memoryMiB == 8192)
     #expect(Preferences.defaults(for: HostInfo(logicalCores: 8, memoryMiB: 16383)).memoryMiB == 4096)
 }
@@ -44,6 +44,13 @@ func scratchDefaults() -> UserDefaults {
     #expect(Preferences.load(from: store, host: m4) == Preferences(cpus: 10, memoryMiB: 20480, fullScreen: true, microphone: true))
     // The same stored values on a smaller host come back within its limits.
     #expect(Preferences.load(from: store, host: small) == Preferences(cpus: 4, memoryMiB: 4096, fullScreen: true, microphone: true))
+}
+
+@Test func savedWindowedModeSurvivesFullScreenDefault() {
+    let store = scratchDefaults()
+    #expect(Preferences.load(from: store, host: m4).fullScreen)
+    Preferences(cpus: 8, memoryMiB: 8192, fullScreen: false).save(to: store)
+    #expect(!Preferences.load(from: store, host: m4).fullScreen)
 }
 
 @Test func workspaceOverrideOrder() {
@@ -87,5 +94,6 @@ func scratchDefaults() -> UserDefaults {
     #expect(Strings.english.count == StringKey.allCases.count)
     #expect(L(.statusRunningSince, "10:00") == "Running since 10:00")
     #expect(L(.memoryValue, 8) == "8 GB")
+    #expect(L(.cpuValue, 6) == "6 cores")
     #expect(L(.errorNotReady, "a", "b").contains("a (b)"))
 }
