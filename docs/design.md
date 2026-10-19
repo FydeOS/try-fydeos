@@ -152,11 +152,17 @@ Why this layout (measured in milestones 3 and 4):
 
 ## Known risks
 
-- GL backend: both Cocoa backends have one Chrome-specific failure (see
-  `decisions.md` D3). Native GL is the default; crosh is the known bad
-  case and has a guest-side workaround ready.
+- GL backend: both Cocoa backends had one Chrome-specific failure (see
+  `decisions.md` D3). Native GL is the default; the crosh case is fixed
+  guest-side by pinning crosh-extension to the libapps revision the R150
+  manifest already carries (upstream's "disable webgl until chrome is
+  fixed", project-vmware override ebuild r1857).
 - Display scale: fixed by D8 (backing pixels + EDID density + chromium
   patch 0173). Images without 0173 render a Retina window at scale 1.
+  0173 also skips Chrome's external-display default zoom for a display
+  scaled from its density; without that hunk OOBE ran at zoom 2.0 on top
+  of scale 2 (measured 2026-10-19: `display_zoom_factor_map`
+  `3552x1998: 2.0` in Local State).
 - Guest suspend (fixed guest-side): powerd's login-screen policy suspends
   after 8m30s idle. On the QEMU virt machine the guest only has s2idle
   (QEMU's PSCI offers no SYSTEM_SUSPEND, so `mem_sleep` is `[s2idle]` and
