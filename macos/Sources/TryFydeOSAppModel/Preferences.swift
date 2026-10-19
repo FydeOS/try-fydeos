@@ -7,7 +7,6 @@ public struct Preferences: Equatable, Sendable {
         public static let memoryMiB = "memoryMiB"
         public static let fullScreen = "fullScreen"
         public static let microphone = "microphone"
-        public static let firstRunNoteDismissed = "firstRunNoteDismissed"
         public static let workspace = "workspace"
         public static let forwards = "forwards"
     }
@@ -19,14 +18,12 @@ public struct Preferences: Equatable, Sendable {
     public var memoryMiB: Int
     public var fullScreen = false
     public var microphone = false
-    public var firstRunNoteDismissed = false
 
-    public init(cpus: Int, memoryMiB: Int, fullScreen: Bool = false, microphone: Bool = false, firstRunNoteDismissed: Bool = false) {
+    public init(cpus: Int, memoryMiB: Int, fullScreen: Bool = false, microphone: Bool = false) {
         self.cpus = cpus
         self.memoryMiB = memoryMiB
         self.fullScreen = fullScreen
         self.microphone = microphone
-        self.firstRunNoteDismissed = firstRunNoteDismissed
     }
 
     public static func cpuChoices(_ host: HostInfo) -> [Int] {
@@ -58,7 +55,6 @@ public struct Preferences: Equatable, Sendable {
         if store.object(forKey: Key.memoryMiB) != nil { p.memoryMiB = store.integer(forKey: Key.memoryMiB) }
         p.fullScreen = store.bool(forKey: Key.fullScreen)
         p.microphone = store.bool(forKey: Key.microphone)
-        p.firstRunNoteDismissed = store.bool(forKey: Key.firstRunNoteDismissed)
         return p.clamped(to: host)
     }
 
@@ -67,7 +63,6 @@ public struct Preferences: Equatable, Sendable {
         store.set(memoryMiB, forKey: Key.memoryMiB)
         store.set(fullScreen, forKey: Key.fullScreen)
         store.set(microphone, forKey: Key.microphone)
-        store.set(firstRunNoteDismissed, forKey: Key.firstRunNoteDismissed)
     }
 
     public var launchOptions: LaunchOptions {

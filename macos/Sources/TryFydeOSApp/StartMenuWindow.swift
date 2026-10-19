@@ -1,6 +1,5 @@
 import AppKit
 import TryFydeOSAppModel
-import UniformTypeIdentifiers
 import TryFydeOSCore
 
 final class StartMenuWindow: NSWindow, NSWindowDelegate, NSTextFieldDelegate {
@@ -20,11 +19,8 @@ final class StartMenuWindow: NSWindow, NSWindowDelegate, NSTextFieldDelegate {
     private let resetButton = NSButton(title: L(.factoryReset), target: nil, action: nil)
     private let quitButton = NSButton(title: L(.quit), target: nil, action: nil)
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
-    private let imageLabel = NSTextField(labelWithString: "")
-    private let installButton = NSButton(title: L(.imageInstall), target: nil, action: nil)
     private let imageProgress = NSProgressIndicator()
     private var grid: NSGridView!
-    private let noteRow = NSStackView()
     private var resetField: NSTextField?
     private var resetConfirmButton: NSButton?
     private let timeFormatter: DateFormatter = {
@@ -60,7 +56,7 @@ final class StartMenuWindow: NSWindow, NSWindowDelegate, NSTextFieldDelegate {
         }
         let actions: [(NSButton, Selector)] = [(launchButton, #selector(launch(_:))), (shutDownButton, #selector(shutDown(_:))),
                                                (logsButton, #selector(openLogs(_:))), (resetButton, #selector(factoryReset(_:))),
-                                               (quitButton, #selector(quit(_:))), (installButton, #selector(installImage(_:)))]
+                                               (quitButton, #selector(quit(_:)))]
         for (button, action) in actions {
             button.target = self
             button.action = action
@@ -72,10 +68,7 @@ final class StartMenuWindow: NSWindow, NSWindowDelegate, NSTextFieldDelegate {
         imageProgress.minValue = 0
         imageProgress.maxValue = 1
         imageProgress.widthAnchor.constraint(equalToConstant: 260).isActive = true
-        let imageRow = NSStackView(views: [imageLabel, installButton])
-        imageRow.alignment = .centerY
         grid = NSGridView(views: [
-            [NSTextField(labelWithString: L(.imageRow)), imageRow],
             [NSGridCell.emptyContentView, imageProgress],
             [NSTextField(labelWithString: L(.cpus)), cpuPopup],
             [NSTextField(labelWithString: L(.memory)), memoryPopup],
@@ -85,24 +78,12 @@ final class StartMenuWindow: NSWindow, NSWindowDelegate, NSTextFieldDelegate {
         grid.column(at: 0).xPlacement = .trailing
         grid.rowSpacing = 8
 
-        let note = NSTextField(wrappingLabelWithString: L(.firstRunNote))
-        note.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
-        note.preferredMaxLayoutWidth = 300
-        let dismiss = NSButton(title: L(.dismiss), target: self, action: #selector(dismissNote(_:)))
-        dismiss.controlSize = .small
-        dismiss.bezelStyle = .rounded
-        noteRow.orientation = .horizontal
-        noteRow.alignment = .centerY
-        noteRow.addArrangedSubview(note)
-        noteRow.addArrangedSubview(dismiss)
-        noteRow.isHidden = preferences.firstRunNoteDismissed
-
         statusLabel.preferredMaxLayoutWidth = 380
         statusLabel.textColor = .secondaryLabelColor
 
         let primary = NSStackView(views: [launchButton, shutDownButton])
         let secondary = NSStackView(views: [logsButton, resetButton, quitButton])
-        let stack = NSStackView(views: [grid, primary, statusLabel, noteRow, secondary])
+        let stack = NSStackView(views: [grid, primary, statusLabel, secondary])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 14
@@ -113,13 +94,10 @@ final class StartMenuWindow: NSWindow, NSWindowDelegate, NSTextFieldDelegate {
 
     func refresh() {
         statusLabel.stringValue = controller.statusText { [timeFormatter] in timeFormatter.string(from: $0) }
-        if let image = controller.image {
-            imageLabel.stringValue = image.rowText
-            installButton.isHidden = image.isInstalled
-            installButton.isEnabled = !image.isImporting
-            grid.row(at: 1).isHidden = !image.isImporting
-            if case .importing(let progress) = image.state { imageProgress.doubleValue = progress.fraction }
-        }
+        var fraction: Double?
+        if case .preparing(let bytes, let total) = controller.state, total > 0 { fraction = Double(bytes) / Double(total) }
+        grid.row(at: 0).isHidden = fraction == nil
+        imageProgress.doubleValue = fraction ?? 0
         launchButton.isEnabled = controller.canLaunch
         shutDownButton.isEnabled = controller.canShutDown
         resetButton.isEnabled = controller.canFactoryReset
@@ -136,12 +114,6 @@ final class StartMenuWindow: NSWindow, NSWindowDelegate, NSTextFieldDelegate {
         onPreferencesChange?(preferences)
     }
 
-    @objc private func dismissNote(_ sender: Any?) {
-        preferences.firstRunNoteDismissed = true
-        noteRow.isHidden = true
-        onPreferencesChange?(preferences)
-    }
-
     @objc private func launch(_ sender: Any?) {
         preferencesChanged(nil)
         onLaunch?(preferences)
@@ -154,21 +126,6 @@ final class StartMenuWindow: NSWindow, NSWindowDelegate, NSTextFieldDelegate {
     @objc private func openLogs(_ sender: Any?) {
         try? FileManager.default.createDirectory(at: AppLog.directory, withIntermediateDirectories: true)
         NSWorkspace.shared.open(AppLog.directory)
-    }
-
-    @objc private func installImage(_ sender: Any?) {
-        guard let image = controller.image else { return }
-        guard image.needsFileChoice else { return image.install() }
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = [UTType(filenameExtension: "bin") ?? .data]
-        panel.message = L(.imageChooseMessage, image.expectedFile)
-        panel.beginSheetModal(for: self) { response in
-            guard response == .OK, let url = panel.url else { return }
-            image.install(from: url)
-        }
     }
 
     @objc private func quit(_ sender: Any?) {

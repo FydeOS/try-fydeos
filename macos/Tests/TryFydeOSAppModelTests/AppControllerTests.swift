@@ -165,4 +165,15 @@ let ok = ExitStatus(code: 0, signal: nil)
     #expect(AppState.notRunning(nil).statusText { _ in "" } == "Not running")
     #expect(AppState.running(since: Date()).statusText { _ in "09:41" } == "Running since 09:41")
     #expect(AppState.shuttingDown.statusText { _ in "" } == "Shutting down…")
+    #expect(AppState.preparing(bytes: 0, total: 0).statusText { _ in "" } == "Preparing…")
+    #expect(AppState.preparing(bytes: 50, total: 200).statusText { _ in "" } == "Unpacking FydeOS… 25%")
+}
+
+@Test func controllerStatusFollowsState() {
+    let (c, d, _) = makeController()
+    #expect(c.statusText { _ in "" } == L(.statusNotRunning))
+    c.launch(LaunchOptions())
+    #expect(c.statusText { _ in "" } == L(.statusPreparing))
+    d.emit(.preparing(bytes: 3, total: 4))
+    #expect(c.statusText { _ in "" } == L(.statusUnpacking, 75))
 }

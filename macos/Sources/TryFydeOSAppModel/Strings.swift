@@ -16,6 +16,7 @@ public enum StringKey: String, CaseIterable, Sendable {
     case statusNotRunning
     case statusNotRunningAfter
     case statusPreparing
+    case statusUnpacking
     case statusStarting
     case statusRunningSince
     case statusShuttingDown
@@ -25,8 +26,6 @@ public enum StringKey: String, CaseIterable, Sendable {
     case errorNotReady
     case errorBusy
     case errorAlertTitle
-    case firstRunNote
-    case dismiss
     case resetTitle
     case resetMessage
     case resetConfirm
@@ -39,17 +38,6 @@ public enum StringKey: String, CaseIterable, Sendable {
     case menuWindow
     case menuClose
     case aboutCredits
-    case imageRow
-    case imageNotInstalled
-    case imageInstalling
-    case imageInstall
-    case imageFoundAt
-    case imageChoose
-    case imageChooseMessage
-    case imageCopying
-    case imageVerifying
-    case imageImportFailed
-    case imageNotVerifiedAfterImport
 }
 
 public enum Strings {
@@ -70,6 +58,7 @@ public enum Strings {
         .statusNotRunning: "Not running",
         .statusNotRunningAfter: "Not running. %@",
         .statusPreparing: "Preparing…",
+        .statusUnpacking: "Unpacking FydeOS… %d%%",
         .statusStarting: "Starting…",
         .statusRunningSince: "Running since %@",
         .statusShuttingDown: "Shutting down…",
@@ -79,8 +68,6 @@ public enum Strings {
         .errorNotReady: "FydeOS did not start: %@ (%@). See Logs.",
         .errorBusy: "Try FydeOS is busy. Wait for the current operation to finish.",
         .errorAlertTitle: "Try FydeOS",
-        .firstRunNote: "Tip: on a Retina screen, set Settings → Device → Displays → Display size to 200% inside FydeOS.",
-        .dismiss: "Dismiss",
         .resetTitle: "Factory reset",
         .resetMessage: "This erases FydeOS and everything stored in it. The next launch starts from the factory image. Type “%@” to confirm.",
         .resetConfirm: "Erase",
@@ -93,17 +80,6 @@ public enum Strings {
         .menuWindow: "Window",
         .menuClose: "Close",
         .aboutCredits: "Runs FydeOS under QEMU with Apple's Hypervisor framework. Runtime recipe from Try Omarchy (MIT).",
-        .imageRow: "FydeOS image",
-        .imageNotInstalled: "Not installed",
-        .imageInstalling: "Installing…",
-        .imageInstall: "Install…",
-        .imageFoundAt: "Found the FydeOS image in %@. Click Install… to copy it (about 7 GB).",
-        .imageChoose: "Click Install… and choose the FydeOS image file (%@).",
-        .imageChooseMessage: "Choose the FydeOS image file (%@).",
-        .imageCopying: "Copying the FydeOS image… %d%%",
-        .imageVerifying: "Verifying the FydeOS image… %d%%",
-        .imageImportFailed: "Could not install the FydeOS image: %@",
-        .imageNotVerifiedAfterImport: "the copied image did not verify",
     ]
 
     public static var table: [StringKey: String] { english }

@@ -40,10 +40,10 @@ func scratchDefaults() -> UserDefaults {
 @Test func persistsAndReloadsClamped() {
     let store = scratchDefaults()
     #expect(Preferences.load(from: store, host: m4) == Preferences.defaults(for: m4))
-    Preferences(cpus: 10, memoryMiB: 20480, fullScreen: true, microphone: true, firstRunNoteDismissed: true).save(to: store)
-    #expect(Preferences.load(from: store, host: m4) == Preferences(cpus: 10, memoryMiB: 20480, fullScreen: true, microphone: true, firstRunNoteDismissed: true))
+    Preferences(cpus: 10, memoryMiB: 20480, fullScreen: true, microphone: true).save(to: store)
+    #expect(Preferences.load(from: store, host: m4) == Preferences(cpus: 10, memoryMiB: 20480, fullScreen: true, microphone: true))
     // The same stored values on a smaller host come back within its limits.
-    #expect(Preferences.load(from: store, host: small) == Preferences(cpus: 4, memoryMiB: 4096, fullScreen: true, microphone: true, firstRunNoteDismissed: true))
+    #expect(Preferences.load(from: store, host: small) == Preferences(cpus: 4, memoryMiB: 4096, fullScreen: true, microphone: true))
 }
 
 @Test func workspaceOverrideOrder() {

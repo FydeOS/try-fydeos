@@ -20,6 +20,8 @@ public enum AppState: Equatable, Sendable {
         switch self {
         case .notRunning(nil): return L(.statusNotRunning)
         case .notRunning(let message?): return L(.statusNotRunningAfter, message)
+        case .preparing(let bytes, let total) where total > 0:
+            return L(.statusUnpacking, Int(min(1, Double(bytes) / Double(total)) * 100))
         case .preparing: return L(.statusPreparing)
         case .starting: return L(.statusStarting)
         case .running(let since): return L(.statusRunningSince, timeFormatter(since))
@@ -57,20 +59,16 @@ public final class AppController {
     public var onError: ((String) -> Void)?
     public var onReadyToQuit: (() -> Void)?
     public var now: () -> Date = Date.init
-    public let image: ImageController?
     private let driver: VMDriver
 
-    public init(driver: VMDriver, image: ImageController? = nil) {
+    public init(driver: VMDriver) {
         self.driver = driver
-        self.image = image
     }
 
-    public var canLaunch: Bool { !state.isActive && !quitPending && image?.isInstalled != false }
+    public var canLaunch: Bool { !state.isActive && !quitPending }
 
-    /// The image's status while it is missing or installing, otherwise the VM's.
     public func statusText(timeFormatter: (Date) -> String) -> String {
-        if !state.isActive, let text = image?.statusText { return text }
-        return state.statusText(timeFormatter: timeFormatter)
+        state.statusText(timeFormatter: timeFormatter)
     }
     public var canShutDown: Bool {
         switch state {
