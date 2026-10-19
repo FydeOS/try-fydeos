@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "image": {"file": "fydeos-arm64-vmware-io-R150-16700.56.0-d20261019.bin.zst", "bytes": 1355933603, "sha256": "8fb9219e233d683a99ace608cb7c735755a6d17cae5d109bebfe1ed686fad380", "rawBytes": 7482718720, "rawSha256": "2cc9a1b5b1f7c8946c723e38ce9704fd597ba10d73c8addb731b3435d212db61", "version": "R150-16700.56.0 dev 2026-10-19 (kernel 025+026, chromium 0173, idle suspend off)"},
+  "image": {"file": "fydeos-arm64-vmware-io-R150-16700.56.0-d20261019b.bin.zst", "bytes": 1375590474, "sha256": "08f337ffc7014f82893272d0e0e553de646a695023795502c55d09ce477ba63e", "rawBytes": 7482718720, "rawSha256": "210f1f91a9a1ba81435caefa1553fa485c3143c0e3e050f2a35c52510807de94", "version": "R150-16700.56.0 dev 2026-10-19 build 2 (kernel 025+026, chromium 0173 with zoom guard, crosh canvas renderer, idle suspend off)"},
   "diskBytes": 68719476736,
   "board": "arm64-vmware-io",
   "kernelCommandLine": {
