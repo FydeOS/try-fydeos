@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build dist/Try FydeOS-<version>.dmg: the app, an Applications link and README.txt.
+# Build dist/Try FydeOS-<version>.dmg: the app and an Applications link.
 #   --sign-identity ID       codesign identity for the DMG (default "-", ad hoc)
 #   --notarize-profile NAME  notarytool keychain profile; submit, wait and staple (skipped when absent)
 #   --stage-only             stop after staging dist/stage/
@@ -40,10 +40,6 @@ rm -rf "$stage"
 mkdir -p "$stage"
 ditto "$app" "$stage/Try FydeOS.app"
 ln -s /Applications "$stage/Applications"
-cat > "$stage/README.txt" <<'EOF'
-Drag Try FydeOS to Applications.
-The first launch unpacks the FydeOS image into ~/Library/Application Support/Try FydeOS, about 7.5 GB.
-EOF
 say "staged $stage"
 [ "$stage_only" = 0 ] || exit 0
 
