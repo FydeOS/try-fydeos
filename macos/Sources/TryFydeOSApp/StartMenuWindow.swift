@@ -13,7 +13,7 @@ private final class CardView: NSView {
     }
 }
 
-final class StartMenuWindow: NSWindow, NSWindowDelegate, NSTextFieldDelegate {
+final class StartMenuWindow: NSWindow, NSWindowDelegate {
     var onPreferencesChange: ((Preferences) -> Void)?
     var onLaunch: ((Preferences) -> Void)?
 
@@ -34,8 +34,6 @@ final class StartMenuWindow: NSWindow, NSWindowDelegate, NSTextFieldDelegate {
     private let launchSpinner = NSProgressIndicator()
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
     private let imageProgress = NSProgressIndicator()
-    private var resetField: NSTextField?
-    private var resetConfirmButton: NSButton?
     private let timeFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .none
@@ -279,37 +277,9 @@ final class StartMenuWindow: NSWindow, NSWindowDelegate, NSTextFieldDelegate {
         alert.addButton(withTitle: L(.cancel))
         let confirm = alert.addButton(withTitle: L(.resetConfirm))
         confirm.hasDestructiveAction = true
-        confirm.isEnabled = false
-
-        let prompt = NSTextField(labelWithString: L(.resetPrompt, Strings.resetPhrase))
-        prompt.font = .systemFont(ofSize: 12, weight: .medium)
-        prompt.translatesAutoresizingMaskIntoConstraints = false
-        let field = NSTextField(string: "")
-        field.placeholderString = Strings.resetPhrase
-        field.delegate = self
-        field.translatesAutoresizingMaskIntoConstraints = false
-        let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 52))
-        accessory.addSubview(prompt)
-        accessory.addSubview(field)
-        NSLayoutConstraint.activate([
-            prompt.leadingAnchor.constraint(equalTo: accessory.leadingAnchor),
-            prompt.trailingAnchor.constraint(lessThanOrEqualTo: accessory.trailingAnchor),
-            prompt.topAnchor.constraint(equalTo: accessory.topAnchor),
-            field.leadingAnchor.constraint(equalTo: accessory.leadingAnchor),
-            field.trailingAnchor.constraint(equalTo: accessory.trailingAnchor),
-            field.topAnchor.constraint(equalTo: prompt.bottomAnchor, constant: 7),
-            field.bottomAnchor.constraint(equalTo: accessory.bottomAnchor),
-        ])
-        alert.accessoryView = accessory
-        resetField = field
-        resetConfirmButton = confirm
-        alert.window.initialFirstResponder = field
         alert.beginSheetModal(for: self) { [weak self] response in
             guard let self else { return }
-            let typed = self.resetField?.stringValue
-            self.resetField = nil
-            self.resetConfirmButton = nil
-            guard response == .alertSecondButtonReturn, typed == Strings.resetPhrase else { return }
+            guard response == .alertSecondButtonReturn else { return }
             do {
                 try self.controller.factoryReset()
             } catch {
@@ -320,9 +290,5 @@ final class StartMenuWindow: NSWindow, NSWindowDelegate, NSTextFieldDelegate {
                 failure.beginSheetModal(for: self)
             }
         }
-    }
-
-    func controlTextDidChange(_ notification: Notification) {
-        resetConfirmButton?.isEnabled = resetField?.stringValue == Strings.resetPhrase
     }
 }

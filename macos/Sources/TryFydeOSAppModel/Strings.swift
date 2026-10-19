@@ -40,7 +40,6 @@ public enum StringKey: String, CaseIterable, Sendable {
     case errorLaunchTitle
     case resetTitle
     case resetMessage
-    case resetPrompt
     case resetConfirm
     case resetDone
     case resetFailedTitle
@@ -56,7 +55,6 @@ public enum StringKey: String, CaseIterable, Sendable {
 }
 
 public enum Strings {
-    public static let resetPhrase = "Try FydeOS"
 
     public static let english: [StringKey: String] = [
         .windowTitle: "Try FydeOS",
@@ -97,7 +95,6 @@ public enum Strings {
         .errorLaunchTitle: "Try FydeOS couldn’t start",
         .resetTitle: "Reset FydeOS to factory settings?",
         .resetMessage: "This permanently erases everything in this FydeOS virtual machine, including apps, files, accounts and settings. This cannot be undone.",
-        .resetPrompt: "Type %@ to confirm",
         .resetConfirm: "Reset",
         .resetDone: "FydeOS has been reset.",
         .resetFailedTitle: "FydeOS couldn’t be reset",
