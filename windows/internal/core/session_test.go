@@ -28,9 +28,11 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// runFakeQEMU serves QMP like QEMU with -action reboot=shutdown: "guest" powers
-// off on the second system_powerdown, "reset" reboots right after the
-// handshake, "hang" never exits on its own.
+// runFakeQEMU serves QMP like QEMU with -action reboot=shutdown and emits
+// POWERDOWN after each system_powerdown: "guest" powers off on the second
+// press, "hostclose" presses once itself after the handshake (the close
+// prompt's Shut down) and powers off on the next press, "reset" reboots right
+// after the handshake, "hang" never exits on its own.
 func runFakeQEMU(mode string) {
 	var sock string
 	for i, a := range os.Args {
@@ -73,7 +75,17 @@ func runFakeQEMU(mode string) {
 			running = m.Execute == "cont"
 		}
 		send(sprintf(`{"return": {}, "id": %d}`, m.ID))
+		if m.Execute == "system_powerdown" {
+			send(`{"event": "POWERDOWN", "data": {}}`)
+		}
 		switch {
+		case mode == "hostclose" && m.Execute == "qmp_capabilities":
+			send(`{"event": "POWERDOWN", "data": {}}`)
+			powerdowns = 1
+		case mode == "hostclose" && m.Execute == "system_powerdown":
+			if powerdowns++; powerdowns == 2 {
+				shutdown("guest-shutdown")
+			}
 		case mode == "reset" && m.Execute == "qmp_capabilities":
 			shutdown("guest-reset")
 		case mode == "guest" && m.Execute == "system_powerdown":
@@ -156,6 +168,42 @@ func TestSessionShutdownThroughControlSocket(t *testing.T) {
 		}
 	}
 	if log, _ := os.ReadFile(filepath.Join(s.Dir, "supervisor.log")); !strings.Contains(string(log), "QMP event SHUTDOWN (guest-shutdown)") {
+		t.Errorf("supervisor.log:\n%s", log)
+	}
+}
+
+func TestSessionHostCloseFinishesTheLadder(t *testing.T) {
+	s, ws := launchFake(t, "hostclose")
+	e := waitExit(t, s)
+	log, _ := os.ReadFile(filepath.Join(s.Dir, "supervisor.log"))
+	if e.Code != 0 || e.Reason != "guest-shutdown" {
+		t.Fatalf("exit %+v\n%s", e, log)
+	}
+	_, r, err := ws.LastRun()
+	if err != nil || r.ShutdownRequest != HostCloseRequest || r.Reason != "guest-shutdown" {
+		t.Fatalf("run.json %+v %v", r, err)
+	}
+	for _, line := range []string{"QMP event POWERDOWN", HostCloseRequest, "power button pressed in the window"} {
+		if !strings.Contains(string(log), line) {
+			t.Errorf("missing %q:\n%s", line, log)
+		}
+	}
+	if strings.Contains(string(log), "system_powerdown twice") {
+		t.Errorf("the ladder pressed the button twice after the window's press:\n%s", log)
+	}
+}
+
+func TestSessionLadderIgnoresItsOwnPowerdownEvents(t *testing.T) {
+	s, _ := launchFake(t, "guest")
+	if err := s.WaitQMP(); err != nil {
+		t.Fatal(err)
+	}
+	s.RequestShutdown("test")
+	if e := waitExit(t, s); e.Reason != "guest-shutdown" {
+		t.Fatalf("exit %+v", e)
+	}
+	log, _ := os.ReadFile(filepath.Join(s.Dir, "supervisor.log"))
+	if strings.Contains(string(log), HostCloseRequest) || strings.Count(string(log), "QMP event POWERDOWN") != 2 {
 		t.Errorf("supervisor.log:\n%s", log)
 	}
 }

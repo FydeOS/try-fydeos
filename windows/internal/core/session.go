@@ -220,6 +220,9 @@ func (s *Session) watchEvents(c *QMPClient) {
 			s.shutdownReason = reason
 			s.mu.Unlock()
 		}
+		if ev.Name == "POWERDOWN" {
+			s.hostPowerdown()
+		}
 	}
 }
 
@@ -246,7 +249,22 @@ func (s *Session) RequestShutdown(reason string) {
 	s.shutdownOnce.Do(func() {
 		s.Log(reason)
 		s.saveRecord(func(r *RunRecord) { r.ShutdownRequest = reason })
-		go s.ladder()
+		go s.ladder(false)
+	})
+}
+
+// HostCloseRequest is the run record's ShutdownRequest after Shut down in the
+// FydeOS window's close prompt.
+const HostCloseRequest = "host-close: Shut down chosen in the FydeOS window"
+
+// hostPowerdown: a POWERDOWN the ladder did not cause comes from the runtime's
+// close prompt, which pressed the power button once; the ladder finishes it.
+// The ladder's own presses also emit POWERDOWN and land here after the Once.
+func (s *Session) hostPowerdown() {
+	s.shutdownOnce.Do(func() {
+		s.Log(HostCloseRequest)
+		s.saveRecord(func(r *RunRecord) { r.ShutdownRequest = HostCloseRequest })
+		go s.ladder(true)
 	})
 }
 
@@ -328,8 +346,9 @@ func (s *Session) ResumeAfterWake() {
 	s.Log("host wake: QMP cont")
 }
 
-// ladder: system_powerdown, again 2 s later, QMP quit at 20 s, TerminateProcess at 30 s.
-func (s *Session) ladder() {
+// ladder: system_powerdown, again 2 s later, QMP quit at 20 s, TerminateProcess
+// at 30 s. pressed: the first press already happened, so only the second is sent.
+func (s *Session) ladder(pressed bool) {
 	select {
 	case <-s.attached:
 	case <-s.exited:
@@ -340,10 +359,15 @@ func (s *Session) ladder() {
 	s.mu.Unlock()
 	t0 := time.Now()
 	if c != nil {
-		s.Log(fmt.Sprintf("system_powerdown twice, %d s apart; quit at %d s, TerminateProcess at %d s",
-			int(PowerButtonRepeatDelay.Seconds()), int(QuitAfter.Seconds()), int(TerminateAfter.Seconds())))
-		if _, err := c.Execute("system_powerdown", nil); err != nil {
-			s.Log("system_powerdown: " + err.Error())
+		if pressed {
+			s.Log(fmt.Sprintf("power button pressed in the window; second system_powerdown in %d s, quit at %d s, TerminateProcess at %d s",
+				int(PowerButtonRepeatDelay.Seconds()), int(QuitAfter.Seconds()), int(TerminateAfter.Seconds())))
+		} else {
+			s.Log(fmt.Sprintf("system_powerdown twice, %d s apart; quit at %d s, TerminateProcess at %d s",
+				int(PowerButtonRepeatDelay.Seconds()), int(QuitAfter.Seconds()), int(TerminateAfter.Seconds())))
+			if _, err := c.Execute("system_powerdown", nil); err != nil {
+				s.Log("system_powerdown: " + err.Error())
+			}
 		}
 		if s.sleepOrExit(PowerButtonRepeatDelay) {
 			return
