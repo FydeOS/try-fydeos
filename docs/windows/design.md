@@ -167,21 +167,40 @@ pinned runtime in milestone 1.
 suffices) and lives in `factory/` on the workstation, excluded from git
 and from sync like the arm64 one.
 
-### Packaging (D-W2, D-W3)
+### Packaging (D-W2, D-W3, revised 2026-10-27)
 
-`dist/Try FydeOS-<version>-windows-x64.zip`, assembled on the workstation
-by `make win-dist`:
+One file for the user: `dist/Try FydeOS-<version>.exe` (about 1.7 GB),
+assembled on the workstation by `make win-dist`. It is the GUI exe with a
+payload appended after the PE image, the way self-extracting installers
+work, so the Go build stays small and the image is not linked in:
 
 ```
-Try FydeOS\
-  Try FydeOS.exe        launcher (GUI)
-  tryfydeos.exe         CLI
-  runtime\              bin\, bin\share\, LICENSES\, provenance\ from the pinned zip
-  factory\              <image>.zst + amd64-vmware-io.json
-  THIRD_PARTY_NOTICES.txt
+[PE image: Try FydeOS.exe]
+[payload header at the overlay start: magic "TRYFYDEOS-PAYLOAD-1", u32 index length, index JSON]
+[entry: runtime.zip]      trimmed runtime: bin\qemu-system-x86_64w.exe, bin\*.dll, bin\share\ (x86 firmware only), LICENSES\, provenance\
+[entry: image.zst]        the factory image as in factory/<board>.json
+[entry: spec.json]        factory/amd64-vmware-io.json
 ```
 
-Portable: unzip anywhere on a local NTFS drive and run. Unsigned.
+The index lists every entry's name, offset (from the overlay start),
+length and sha256. The launcher finds the overlay start from the PE
+section table (end of the last section's raw data), not from the end of
+the file, so an Authenticode signature appended later does not move it.
+No payload header means a development build: runtime and spec next to
+the exe or the `TRY_FYDEOS_*` overrides, as today.
+
+At run time: the index hash is checked at start; the runtime is extracted
+once into `%LOCALAPPDATA%\Try FydeOS\runtime\<sha256 prefix>\` (hash
+verified while extracting), so a newer exe brings its own runtime without
+touching the VM; Launch streams `image.zst` from the exe straight into
+`disk.raw` with the existing decoder, no temporary copy. The CLI stays a
+development tool and is not shipped.
+
+Unsigned (D-W3): SmartScreen shows "Windows protected your PC" once, the
+user clicks More info, Run anyway. Defender scans the download; the time
+it takes on a 1.7 GB file is measured in milestone 4. When the image
+download split arrives, the same exe without `image.zst` in its payload
+downloads the image instead of reading it from itself.
 
 ### Workflow
 
@@ -215,8 +234,10 @@ in session 0).
    guest yet; revisit with the own runtime).
 3. App: start menu, supervision, sleep pause, logs, focus. Check: every
    path clicked by hand on the NUC.
-4. Package: `make win-dist`, unzip-and-run on a fresh Windows user,
-   SmartScreen click-through documented in the README.
+4. Package: `make win-dist` builds the single exe with the appended
+   payload; fresh-Windows-user test on the NUC: download-like copy with
+   the Mark of the Web, SmartScreen click-through, first start time,
+   runtime extraction, Launch, all documented in the README with timings.
 5. Own runtime: Docker cross-build with our overlay (branding, close →
    ladder, EDID density for HiDPI hosts), `runtime/` recipe extended to
    produce it.

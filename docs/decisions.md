@@ -138,8 +138,11 @@ window-close routing and HiDPI density need runtime patches. See
 
 ## D12. Windows: image bundled, unsigned portable zip, UEFI only (2026-10-27)
 
-The amd64 image ships inside the zip like the DMG (no raw image is
-published for download yet; an online download is a later split). No
-code-signing certificate exists, so testers click through SmartScreen.
+The amd64 image ships inside the app like the DMG (no raw image is
+published for download yet; an online download is a later split): one
+self-contained exe with the runtime and the image appended as a payload,
+no zip and no installer, because one file is the simplest thing for the
+user (Wei, 2026-10-27). No code-signing certificate exists, so testers
+click through SmartScreen.
 The guest boots through UEFI only; the image's legacy syslinux path is
 unsupported by FydeOS. Full screen defaults to on for parity with the Mac.
