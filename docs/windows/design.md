@@ -15,7 +15,9 @@ owns the FydeOS window.
 Decisions by Wei (2026-10-27):
 
 - Runtime: start on Try Omarchy's published Windows runtime, pinned by
-  hash; switch to our own cross-build later (D-W1).
+  hash; switch to our own cross-build later (D-W1). Done in milestone 5:
+  the runtime is our Docker cross-build (D13), Try Omarchy's zip stays a
+  fallback (`make win-runtime WIN_RUNTIME=omarchy`).
 - Image: bundled in the distributable like the DMG; an online download
   comes later, once FydeOS publishes a raw image (the download page only
   serves the VMware OVA today) (D-W2).
@@ -59,7 +61,48 @@ Two findings that shape the design:
   kernel config change above; `disable_idle_suspend` exists only in the
   arm64 BSP, the amd64 behaviour under WHPX is measured in milestone 2.
 
-### Runtime: Try Omarchy's Windows runtime, pinned (D-W1)
+### Runtime: our cross-build, Try Omarchy's zip as fallback (D-W1, D13)
+
+Since milestone 5 the runtime is built on the workstation by
+`make win-runtime-build` from `windows/runtime/` (recipe in
+`windows/README.md`, "Own runtime"): QEMU's Fedora 43 mingw64 cross
+toolchain in Docker, the same pinned QEMU and virglrenderer forks and all
+29 Try Omarchy patches, plus SDL2, libepoxy and libslirp from source and
+our overlay. Every input is pinned by hash in `windows/runtime/lock.json`,
+the build runs without network and is reproducible, so the zip is named
+after the lock (`out/win-runtime-<lock sha256 prefix>.zip`) and pinned
+under `own` in `windows/runtime.lock.json`. 41 MB zipped, 116 MB unpacked;
+only the windowed QEMU, its DLLs, the x86 firmware, licenses and
+provenance. `tryfydeos doctor` names the runtime build from its README.txt.
+
+Overlay (`windows/runtime/overlay/`):
+
+- product identity: window title is the `-name` value ("Try FydeOS"), our
+  icon on the window and the exe, version resource FileDescription and
+  ProductName "Try FydeOS" (what Task Manager shows);
+- close button: a "Shut down FydeOS?" prompt owned by the window; Shut
+  down presses the ACPI power button, and the launcher completes its
+  ladder from the unrequested QMP `POWERDOWN` (second press, quit,
+  terminate); Cancel keeps the guest running, which never stops while the
+  prompt is open;
+- EDID density: 110 DPI per unit of the window's Windows scale, rounded
+  to whole centimetres, applied to the default EDID and every resize, as
+  the Mac's D8 contract does;
+- msvcrt UTF-8 paths: Fedora's toolchain targets msvcrt, not the UCRT, so
+  Try Omarchy's UCRT-locale check runs on the UCRT only;
+- virglrenderer without Venus: Fedora's Vulkan headers are too old for the
+  fork's Venus, so Venus is off (no Vulkan consumer in the guest today).
+
+Differences from Try Omarchy's MSYS2 build: msvcrt instead of UCRT, no
+Venus, no D3D11 video decode, no libusb, no `qemu-img.exe`. Two Fedora
+packages were unusable and are built from source instead: the release
+glib could not read files on msvcrt (fixed by 2.86.5 from updates, so the
+updates repo is on and the 11 shipped Fedora packages are pinned by
+version), and libepoxy 1.5.10 crashed at the first GL call without the
+upstream null-EGL fix, so it carries MSYS2's four patches like Try
+Omarchy's runtime.
+
+The fallback remains pinned at the top level of `windows/runtime.lock.json`:
 
 - `winq-emu-alpha10-portable.zip` from release `runtime-v1-r25` of
   `omacom/try-omarchy-windows`, sha256
@@ -73,10 +116,6 @@ Two findings that shape the design:
   `qemu-img.exe`, licenses and provenance. Built by upstream in MSYS2
   UCRT64; guest-agnostic, only its pinch device and virtio-serial names are
   Omarchy-specific and we do not use them.
-- Later (milestone 5): our own build on the workstation with QEMU's
-  Fedora mingw cross recipe in Docker, carrying our overlay (exe name
-  and icon, window close routed to the shutdown ladder, EDID density from
-  the host DPI as the Cocoa window-master patch does).
 
 ### QEMU contract (v1, Windows)
 
@@ -234,26 +273,46 @@ in session 0).
    guest yet; revisit with the own runtime).
 3. App: start menu, supervision, sleep pause, logs, focus. Check: every
    path clicked by hand on the NUC.
+   Done 2026-10-27: Launch, guest restart (relaunch), window close, Shut
+   down, About, logs folder, factory reset and the preferences all driven
+   on the NUC with screenshots (`out/nuc-gui/`); the sleep pause is
+   unit-tested only. Wei's own hands-on pass is still open.
 4. Package: `make win-dist` builds the single exe with the appended
    payload; fresh-Windows-user test on the NUC: download-like copy with
    the Mark of the Web, SmartScreen click-through, first start time,
    runtime extraction, Launch, all documented in the README with timings.
+   Done 2026-10-27: 1.65 GB exe, Windows 10's "Open File - Security
+   Warning" (not SmartScreen) after a 10.5 s scan, 14.9 s from Run to the
+   start menu the first time, 0.2 s without the Mark of the Web; runtime
+   extracted in 1.2 s, image unpacked in 20 s, OOBE 1 min 47 s after the
+   click. Published as `/dist/v23/try-fydeos/Try FydeOS-0.1.0.exe`.
 5. Own runtime: Docker cross-build with our overlay (branding, close →
    ladder, EDID density for HiDPI hosts), `runtime/` recipe extended to
    produce it.
+   Done 2026-10-27: `make win-runtime-build`, 4 min in Docker after a
+   1 min fetch, reproducible. On the NUC (100 % monitor): boots to OOBE
+   with VirGL, HDA and QMP; title "Try FydeOS" with our icon in the title
+   bar and taskbar; resize followed (EDID 340x170 mm for 1484x721 px at
+   110 DPI); close button → prompt, Cancel keeps running, Shut down →
+   POWERDOWN, second press 2 s later, `guest-shutdown` at 16 s, exit 0.
+   Open: the density at 125/150 % is unmeasured (needs a scaled display);
+   the first guest mode is still the default 1280x800 EDID until the user
+   resizes, which at 150 % gives a small window; the packaged exe with
+   this runtime is built (`out/win-dist-own/`) but not yet run on the NUC.
 6. Later: image download (D-W2 split), shared folder, clipboard, port
    forwards UI.
 
 ## Known risks
 
-- HiDPI hosts: without the density patch the guest sees QEMU's default
-  EDID and picks scale 1, so on a 150 % display the FydeOS UI is small.
-  Fixed in milestone 5; until then the NUC's 100 % monitor hides it.
-- Window close: the stock SDL frontend quits QEMU on close, a hard power
-  off for the guest. Milestone 5 routes it to the ladder.
-- Branding: the FydeOS window carries SDL's default icon and Task Manager
-  shows `qemu-system-x86_64w.exe` until milestone 5 (renaming the exe is
-  tried in milestone 4).
+- HiDPI hosts: the density patch (milestone 5) is measured at 100 % only;
+  a 125/150 % check needs a scaled display. The first guest mode is the
+  default 1280x800 until a resize, so at 150 % the window starts small
+  (the launcher could pass `xres`/`yres` from the host like the Mac).
+- Close button under grab: with the pointer captured by the guest, the X
+  cannot be reached until Ctrl-Alt-G; the Mac has no grab.
+- Runtime drift: the shipped Fedora packages are pinned by version and the
+  build stops when one moves; a Fedora 43 rebase of glib, pixman or the
+  gcc runtime needs the pins refreshed and the NUC check rerun.
 - Host prerequisites the launcher must detect and explain: WHPX feature
   off (`dism /enable-feature /featurename:HypervisorPlatform`, elevation,
   reboot), virtualization disabled in firmware, ARM64 Windows, FAT/exFAT

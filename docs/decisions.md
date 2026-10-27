@@ -146,3 +146,20 @@ user (Wei, 2026-10-27). No code-signing certificate exists, so testers
 click through SmartScreen.
 The guest boots through UEFI only; the image's legacy syslinux path is
 unsupported by FydeOS. Full screen defaults to on for parity with the Mac.
+
+## D13. Windows: the runtime is our Docker cross-build (2026-10-27)
+
+Milestone 5 replaces Try Omarchy's zip with `make win-runtime-build`:
+QEMU's Fedora 43 mingw64 cross image in Docker, the same pinned QEMU and
+virglrenderer forks with all of Try Omarchy's patches, SDL2, libepoxy and
+libslirp from source, and our overlay (window title and icon, the close
+prompt feeding the shutdown ladder, EDID density from the Windows scale).
+Every input is pinned by hash in `windows/runtime/lock.json`; the build
+runs offline and is reproducible. Try Omarchy's zip stays pinned as a
+fallback (`WIN_RUNTIME=omarchy`).
+
+Accepted differences from Try Omarchy's MSYS2 build: msvcrt instead of
+the UCRT (Fedora has no UCRT glib), no Venus (Fedora's Vulkan headers are
+older than the fork's protocol; no Vulkan consumer in the guest today), no
+D3D11 video decode, no libusb. Revisit Venus when a guest needs it or a
+UCRT toolchain becomes available in the image.
