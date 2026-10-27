@@ -1,0 +1,151 @@
+From: Try FydeOS contributors
+Subject: [PATCH] sdl, win32: ask before the close button shuts FydeOS down
+
+Applies after qemu-sdl-product-identity.patch.
+
+The stock close button requests a host-ui shutdown, a hard power-off for
+the guest. On Windows it now opens a MessageBox owned by the SDL window,
+"Shut down FydeOS?" with Shut down and Cancel (Cancel is the default).
+Shut down sends the ACPI power button through
+qemu_system_powerdown_request(), so QMP clients see POWERDOWN; the Try
+FydeOS launcher treats an unrequested POWERDOWN as the start of its
+shutdown ladder (second press, quit, terminate). The box runs on its own
+thread and hands the answer back as an SDL user event, so the guest keeps
+running while it is open; one close click delivers both
+SDL_WINDOWEVENT_CLOSE and SDL_QUIT, and only one box opens. window-close=off
+still ignores the button. The manifest asks for common controls 6 so the
+box uses the themed buttons.
+
+diff --git a/qemu.manifest b/qemu.manifest
+index c5b6b9d6..747a2d76 100644
+--- a/qemu.manifest
++++ b/qemu.manifest
+@@ -1,4 +1,9 @@
+ <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
++<dependency>
++<dependentAssembly>
++<assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0" processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>
++</dependentAssembly>
++</dependency>
+ <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
+ <security>
+ <requestedPrivileges>
+diff --git a/ui/sdl2.c b/ui/sdl2.c
+index a15e63d8..5b6a0fd0 100644
+--- a/ui/sdl2.c
++++ b/ui/sdl2.c
+@@ -800,6 +800,66 @@ static void handle_mousewheel(SDL_Event *ev)
+     scon->scroll.legacy_y %= 120;
+ }
+ 
++#ifdef _WIN32
++/*
++ * The close button asks before it powers the guest down; the launcher sees
++ * the POWERDOWN event and finishes its shutdown ladder. The prompt runs on
++ * its own thread so the main loop, and with it the guest, keeps running
++ * while it is open.
++ */
++static Uint32 sdl2_close_confirmed_event = (Uint32)-1;
++static int sdl2_close_prompt_open;
++static HHOOK sdl2_close_prompt_hook;
++
++static LRESULT CALLBACK sdl2_close_prompt_cbt(int code, WPARAM wparam,
++                                              LPARAM lparam)
++{
++    if (code == HCBT_ACTIVATE) {
++        /* MessageBox has no custom buttons; relabel OK once it activates. */
++        SetDlgItemTextW((HWND)wparam, IDOK, L"Shut down");
++        UnhookWindowsHookEx(sdl2_close_prompt_hook);
++        return 0;
++    }
++    return CallNextHookEx(NULL, code, wparam, lparam);
++}
++
++static DWORD WINAPI sdl2_close_prompt_thread(LPVOID owner)
++{
++    wchar_t *title = g_utf8_to_utf16(qemu_name ? qemu_name : "QEMU", -1,
++                                     NULL, NULL, NULL);
++
++    sdl2_close_prompt_hook = SetWindowsHookExW(WH_CBT, sdl2_close_prompt_cbt,
++                                               NULL, GetCurrentThreadId());
++    if (MessageBoxW(owner, L"Shut down FydeOS?", title,
++                    MB_OKCANCEL | MB_ICONQUESTION | MB_DEFBUTTON2) == IDOK) {
++        SDL_Event ev = { .type = sdl2_close_confirmed_event };
++        SDL_PushEvent(&ev);
++    }
++    g_free(title);
++    qatomic_set(&sdl2_close_prompt_open, 0);
++    return 0;
++}
++
++static void sdl2_confirm_close(struct sdl2_console *scon)
++{
++    SDL_SysWMinfo wm;
++    HANDLE thread;
++
++    if (qatomic_xchg(&sdl2_close_prompt_open, 1)) {
++        return;
++    }
++    SDL_VERSION(&wm.version);
++    thread = CreateThread(NULL, 0, sdl2_close_prompt_thread,
++                          SDL_GetWindowWMInfo(scon->real_window, &wm) ?
++                          wm.info.win.window : NULL, 0, NULL);
++    if (thread) {
++        CloseHandle(thread);
++    } else {
++        qatomic_set(&sdl2_close_prompt_open, 0);
++    }
++}
++#endif
++
+ static void handle_windowevent(SDL_Event *ev)
+ {
+     struct sdl2_console *scon = get_scon_from_window(ev->window.windowID);
+@@ -872,8 +932,12 @@ static void handle_windowevent(SDL_Event *ev)
+                 allow_close = false;
+             }
+             if (allow_close) {
++#ifdef _WIN32
++                sdl2_confirm_close(scon);
++#else
+                 shutdown_action = SHUTDOWN_ACTION_POWEROFF;
+                 qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_UI);
++#endif
+             }
+         } else {
+             SDL_HideWindow(scon->real_window);
+@@ -987,8 +1051,12 @@ void sdl2_poll_events(struct sdl2_console *scon)
+                 allow_close = false;
+             }
+             if (allow_close) {
++#ifdef _WIN32
++                sdl2_confirm_close(scon);
++#else
+                 shutdown_action = SHUTDOWN_ACTION_POWEROFF;
+                 qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_UI);
++#endif
+             }
+             break;
+         case SDL_MOUSEMOTION:
+@@ -1008,6 +1076,11 @@ void sdl2_poll_events(struct sdl2_console *scon)
+             handle_windowevent(ev);
+             break;
+         default:
++#ifdef _WIN32
++            if (ev->type == sdl2_close_confirmed_event) {
++                qemu_system_powerdown_request();
++            }
++#endif
+             break;
+         }
+     }
+@@ -1225,6 +1298,9 @@ static void sdl2_display_init(DisplayState *ds, DisplayOptions *o)
+     SDL_SetHint(SDL_HINT_ALLOW_ALT_TAB_WHILE_GRABBED, "0");
+ #endif
+     SDL_SetHint(SDL_HINT_WINDOWS_NO_CLOSE_ON_ALT_F4, "1");
++#ifdef _WIN32
++    sdl2_close_confirmed_event = SDL_RegisterEvents(1);
++#endif
+     sdl2_set_hint_x11_force_egl();
+     SDL_EnableScreenSaver();
+     memset(&info, 0, sizeof(info));

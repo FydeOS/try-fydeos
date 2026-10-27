@@ -193,6 +193,9 @@ func cmdDoctor(o *options) (int, error) {
 		}
 		if out, err := exec.Command(loc.QEMU(), "-version").Output(); err == nil {
 			check(true, fmt.Sprintf("runtime %s: %s", loc.QEMU(), strings.SplitN(string(out), "\n", 2)[0]), false)
+			if b := loc.RuntimeBuild(); b != "" {
+				report("info", "runtime build: "+b)
+			}
 		} else {
 			_, statErr := os.Stat(loc.QEMU())
 			check(false, fmt.Sprintf("runtime %s: %v", loc.QEMU(), err), statErr != nil)

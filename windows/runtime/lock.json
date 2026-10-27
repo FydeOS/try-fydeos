@@ -1,0 +1,235 @@
+{
+  "schema": 1,
+  "name": "try-fydeos-win-runtime",
+  "sourceDateEpoch": 1793059200,
+  "image": {
+    "base": "docker.io/library/fedora:43@sha256:a651ddf48ea28a06ed4e1e6519f51c9f47e7a5a138722ade87369b8fbb7e5b42",
+    "repos": "fedora 43 + updates; image.packages pins the packages whose DLLs ship",
+    "packages": [
+      "mingw64-gettext-0.25.1-1.fc43.noarch",
+      "mingw64-glib2-2.86.5-2.fc43.noarch",
+      "mingw64-libfdt-1.7.2-7.fc43.noarch",
+      "mingw64-libffi-3.5.1-2.fc43.noarch",
+      "mingw64-libgcc-15.2.1-2.fc43.x86_64",
+      "mingw64-pcre2-10.48-1.fc43.noarch",
+      "mingw64-pixman-0.46.2-2.fc43.noarch",
+      "mingw64-win-iconv-0.0.10-3.fc43.noarch",
+      "mingw64-winpthreads-13.0.0-2.fc43.noarch",
+      "mingw64-zlib-1.3.2-1.fc43.noarch",
+      "mingw64-zstd-1.5.7-2.fc43.noarch"
+    ]
+  },
+  "recipe": {
+    "name": "try-omarchy-windows",
+    "commit": "5ec0ef845420c16d201012bf22b488f0a99c0e9e",
+    "url": "https://github.com/omacom/try-omarchy-windows/archive/5ec0ef845420c16d201012bf22b488f0a99c0e9e.tar.gz",
+    "sha256": "2733d1ef94acf547775f048aed0b3937fa72fa8ab0b3393ec32ff5ce36555a75",
+    "license": "MIT",
+    "file": "try-omarchy-windows-5ec0ef845420c16d201012bf22b488f0a99c0e9e.tar.gz"
+  },
+  "qemu": {
+    "repository": "https://github.com/cmspam/winq-emu-qemu.git",
+    "commit": "2ce303cfbbc8b0e4a7a3c66e27a094a980426d73",
+    "baseTag": "v11.0.0",
+    "baseCommit": "98b060da3a4f92b2a994ead5b16a87e783baf77c",
+    "subprojects": [
+      "keycodemapdb",
+      "berkeley-softfloat-3",
+      "berkeley-testfloat-3"
+    ],
+    "license": "GPL-2.0",
+    "patches": [
+      {
+        "file": "runtime-build/patches/qemu/0001-whpx-continue-when-nested-virtualization-is-refused.patch",
+        "sha256": "8dd4e1f9a3dcf6d09e01277262493ffa99ba66f11ba704742b1cd929b4088d57"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0002-restore-bounded-sdl-refresh-intervals.patch",
+        "sha256": "61bc4a8e9a18487a4363241d4d949321758ed1b1fae7bb800cbb4f37f494403a"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0003-usb-explicit-attachment-without-reconnect.patch",
+        "sha256": "2c838d4b4224dd344f9d036f7ea5b7d216a92cbf45ecefb07f66865698dc347f"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0004-bound-usb-port-path-formatting.patch",
+        "sha256": "59655b858dafd7a6125d886a73174056934c5b492152431ed315052f6197dbea"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0005-restore-windows-socket-handle-protection.patch",
+        "sha256": "3d25a06e9b0eeb11a6781e4655cbee7ce201f2f75f55457f96e9ae4bde0a7623"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0006-preserve-complete-usb-port-identities.patch",
+        "sha256": "f9f89d8454d7bc9cba96f967f4905c9534d5a4210a74404ea933c5727f694f47"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0007-report-native-file-drops.patch",
+        "sha256": "7711bd1ac183d09ed2c6f75c8b0e688a314881efa4a94ad379acd4b851e8c0ab"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0008-preserve-windows-share-unicode-and-times.patch",
+        "sha256": "47b9e13191858cdeefaa7407d4049e273dd8888cfc472008b70d431cea9ef14f"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0009-use-utf8-for-windows-runtime-paths.patch",
+        "sha256": "635c48e6d10ddc80ac3a068f275b877c51e062d188986fdd86ebb775a0a74670"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0010-reset-sdl-scanout-before-destroying-secondary-window.patch",
+        "sha256": "2e74e6c99704e1c1894e3702f2756dfed0609fcb8a9c8b9628bfde0ca53a15a6"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0011-ignore-stale-sdl-window-input.patch",
+        "sha256": "1e2054dbd2ac37f37fa7163af269c3629c386a6f5ead3a618ef544b6ef641bdf"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0012-share-secondary-sdl-gl-contexts.patch",
+        "sha256": "ae3aea46f9ab12f06b9efde0f874f94c4515009c933ebc138abf4bb00f1057e8"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0013-select-sdl-audio-devices.patch",
+        "sha256": "7892f3acacb15b7c929af94989fc3d249e329e147b1467d31f8907f57e088be7"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0014-forward-windows-pinch.patch",
+        "sha256": "78ab8edc25822a0073b32ac2a99da92e7ff8b1b481c31651337ded4c169dbbd2"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0015-reclaim-free-guest-pages-on-whpx.patch",
+        "sha256": "b262c8348f25fde5cc7526276e1f59ba559df2076e413a69949506e3f0790d74"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0016-live-sdl-audio-routes.patch",
+        "sha256": "f7ea4393afdc6bd97604c4d2dbb015600c4ffd98cbcffc05d2bcdfd7493e6eb2"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0017-defer-idle-sdl-playback-open.patch",
+        "sha256": "81a20e6bb025eccaf9edc5f4f13a0b3d3d3a4a799a377ac00eb64dabce2ed221"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0018-preserve-precise-sdl-scroll.patch",
+        "sha256": "ef1400c2cd50f6898b33bae4676cf0aad20eca577f3b2146b956da4339f17496"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0019-honor-whpx-cpu-model.patch",
+        "sha256": "264a2fea4309e2b8f445a4cf590d87333c5c232b3dcdc5d5506ace9e71a18cc2"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0020-allow-external-sdl-keyboard-hook.patch",
+        "sha256": "6040a630c9961a1c70c7686aa8bb943e4f1c1c4ed04f64e41d73e92882050788"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0021-detach-windows-ime-from-graphic-consoles.patch",
+        "sha256": "5c7a87f18a40a7c22b58ba7e70918ae2b9f7f571400aff6bf3ad05119488bb4e"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0022-keep-sdl-capture-running-without-a-microphone.patch",
+        "sha256": "94835ab3e9fe7bf348401ff5d50424f8c116511ef60c138e4de7e73fb4461cec"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0023-show-guest-cursors-in-sdl-windows.patch",
+        "sha256": "1305bb5e384cba185b4259a2935b0528404c18ee38d10e9084d25cac346e4bde"
+      },
+      {
+        "file": "runtime-build/patches/qemu/0024-raise-windows-fd-setsize-for-slirp.patch",
+        "sha256": "ba94ed3e314c9388aeba6e888747d92e797f1c98c9c546b4ed71a76f10163059"
+      }
+    ],
+    "overlay": [
+      {
+        "file": "overlay/qemu-sdl-product-identity.patch",
+        "sha256": "b5c2a490941b8bf648bf561559278dfcb9af3a4065d87ebab2b066c00b132c0a"
+      },
+      {
+        "file": "overlay/qemu-sdl-close-powerdown.patch",
+        "sha256": "d810268cecbb2a09e42ab8917d3af4dffe34ec25a7ea26da1bd42628fb33e860"
+      },
+      {
+        "file": "overlay/qemu-sdl-edid-density.patch",
+        "sha256": "c217a5a0d7331c9fc534d0a5dcf95341ddf79e9a531b8c3437e0795374a78b61"
+      },
+      {
+        "file": "overlay/qemu-msvcrt-utf8-paths.patch",
+        "sha256": "0b0a3c9c19a3b48d0ee89b6f55e4ef1c4e82540cbeb7668943af794c1e99f942"
+      }
+    ]
+  },
+  "virglrenderer": {
+    "repository": "https://github.com/cmspam/winq-emu-virglrenderer.git",
+    "commit": "e80354b8f5a0dedc62374b905a181874682659cc",
+    "baseTag": "1.3.0",
+    "baseCommit": "ca50e008863837e094747a69974dde3ae148aeaa",
+    "license": "MIT",
+    "patches": [
+      {
+        "file": "runtime-build/patches/virglrenderer/0001-resolve-windows-handle-tokens-before-crt.patch",
+        "sha256": "0419c3e3e8ada85e7777a8beb0d8e9f9bb918c904bb33546039161ef74e05d73"
+      },
+      {
+        "file": "runtime-build/patches/virglrenderer/0002-import-windows-host-memory-for-internal-resources.patch",
+        "sha256": "403f60a2a00cf65b860e5bec8b98483e00056949d945bb4174a46b6416f5cc53"
+      },
+      {
+        "file": "runtime-build/patches/virglrenderer/0003-preserve-device-local-resources-until-memory-binding.patch",
+        "sha256": "7dbf0722d095de28c7ff2efdab57dbe2af63217b54f9b5c363ae1ffd49e4519d"
+      },
+      {
+        "file": "runtime-build/patches/virglrenderer/0004-avoid-intel-windows-mutable-buffer-mapping.patch",
+        "sha256": "87f52cd0cbe0f3cec3bb30e94f718c3df622b9a34cfccab8f21ca61f3c98cab1"
+      },
+      {
+        "file": "runtime-build/patches/virglrenderer/0005-batch-intel-windows-buffer-uploads.patch",
+        "sha256": "af35a04151d4e9d14ed0c86ba3741a45e0af6e47c8ced747e7523dc1eab8a34d"
+      }
+    ],
+    "overlay": [
+      {
+        "file": "overlay/virglrenderer-without-venus.patch",
+        "sha256": "3f4b900dd0282dbeca07a526d155523135c5185b9613c80c3499dc2129d2bd69"
+      }
+    ]
+  },
+  "libslirp": {
+    "version": "4.9.3",
+    "url": "https://gitlab.freedesktop.org/slirp/libslirp/-/archive/v4.9.3/libslirp-v4.9.3.tar.gz",
+    "sha256": "ee698ca4ce05217ca7d520c7f0b1b1228fd7d32922dd32d1051c347152588417",
+    "license": "BSD-3-Clause"
+  },
+  "sdl2": {
+    "version": "2.32.10",
+    "url": "https://github.com/libsdl-org/SDL/releases/download/release-2.32.10/SDL2-2.32.10.tar.gz",
+    "sha256": "5f5993c530f084535c65a6879e9b26ad441169b3e25d789d83287040a9ca5165",
+    "license": "Zlib"
+  },
+  "libepoxy": {
+    "version": "1.5.10",
+    "url": "https://github.com/anholt/libepoxy/archive/refs/tags/1.5.10.tar.gz",
+    "file": "libepoxy-1.5.10.tar.gz",
+    "sha256": "a7ced37f4102b745ac86d6a70a9da399cc139ff168ba6b8002b4d8d43c900c15",
+    "license": "MIT",
+    "patchesFrom": "MSYS2 mingw-w64-libepoxy 1.5.10-7 (MINGW-packages b13c6d3a)",
+    "patches": [
+      {
+        "url": "https://raw.githubusercontent.com/msys2/MINGW-packages/b13c6d3af1dde801a7d2e16e6daa7e4b5a21cc36/mingw-w64-libepoxy/001-egl-missing-prototype.patch",
+        "file": "libepoxy-001-egl-missing-prototype.patch",
+        "sha256": "5fb6b63e93cb92052f25c0ac230f3b4d89054a28e02dc37a42eb9f866cd0cbc1"
+      },
+      {
+        "url": "https://patch-diff.githubusercontent.com/raw/anholt/libepoxy/pull/285.patch",
+        "file": "libepoxy-pr285.patch",
+        "sha256": "e86994609738190e9fb84ea96184639a1282ee4eee5a5ae0272d9a2d83a802ce"
+      },
+      {
+        "url": "https://patch-diff.githubusercontent.com/raw/anholt/libepoxy/pull/294.patch",
+        "file": "libepoxy-pr294.patch",
+        "sha256": "3ef53c2126e3a27bc090f40bbc423ae70e08edbc6291a74f22a0bebcd00da8a8"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/msys2/MINGW-packages/b13c6d3af1dde801a7d2e16e6daa7e4b5a21cc36/mingw-w64-libepoxy/0001-Ensure-dispatch-table-initialization.patch",
+        "file": "libepoxy-0001-Ensure-dispatch-table-initialization.patch",
+        "sha256": "d035fc71735ce8364cb2e8c4783c9e0396bc84bff29221de48f152bd36e60b9f"
+      }
+    ]
+  }
+}

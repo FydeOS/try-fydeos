@@ -1,0 +1,114 @@
+From: Try FydeOS contributors
+Subject: [PATCH] sdl, win32: present the VM as Try FydeOS on Windows
+
+Applies after Try Omarchy's 0001-0024 on cmspam/winq-emu-qemu.
+
+QEMU owns the visible window, so Windows shows its executable in the
+taskbar, Alt-Tab and Task Manager. Title the SDL window with the -name
+value alone (Try FydeOS, plus the grab or stopped hint when one applies)
+instead of "QEMU (<name>-<index>)", brand the version resource (Task
+Manager shows FileDescription) and give every SDL window the executable's
+icon resource instead of QEMU's bitmap. build.sh copies
+windows/cmd/TryFydeOSApp/TryFydeOS.ico, rendered from
+macos/Resources/TryFydeOSIcon.svg, to pc-bios/tryfydeos.ico.
+
+diff --git a/ui/sdl2.c b/ui/sdl2.c
+index 098ccc71..a15e63d8 100644
+--- a/ui/sdl2.c
++++ b/ui/sdl2.c
+@@ -87,6 +87,32 @@ static struct sdl2_console *get_scon_from_window(uint32_t window_id)
+     return NULL;
+ }
+ 
++#ifdef _WIN32
++/* The executable's icon resource (version.rc), at the sizes Windows asks for. */
++static void sdl2_set_resource_icon(SDL_Window *window)
++{
++    SDL_SysWMinfo wm;
++    HINSTANCE instance = GetModuleHandleW(NULL);
++    HICON big, small;
++
++    SDL_VERSION(&wm.version);
++    if (!window || !SDL_GetWindowWMInfo(window, &wm)) {
++        return;
++    }
++    big = LoadImageW(instance, L"IDI_ICON1", IMAGE_ICON,
++                     GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), 0);
++    small = LoadImageW(instance, L"IDI_ICON1", IMAGE_ICON,
++                       GetSystemMetrics(SM_CXSMICON),
++                       GetSystemMetrics(SM_CYSMICON), 0);
++    if (big) {
++        SendMessageW(wm.info.win.window, WM_SETICON, ICON_BIG, (LPARAM)big);
++    }
++    if (small) {
++        SendMessageW(wm.info.win.window, WM_SETICON, ICON_SMALL, (LPARAM)small);
++    }
++}
++#endif
++
+ void sdl2_window_create(struct sdl2_console *scon)
+ {
+     int flags = 0;
+@@ -150,6 +176,9 @@ void sdl2_window_create(struct sdl2_console *scon)
+ 
+     win_pinch_create(scon);
+     sdl_update_caption(scon);
++#ifdef _WIN32
++    sdl2_set_resource_icon(scon->real_window);
++#endif
+ }
+ 
+ void sdl2_window_destroy(struct sdl2_console *scon)
+@@ -222,9 +251,8 @@ static void sdl_update_caption(struct sdl2_console *scon)
+     }
+ 
+     if (qemu_name) {
+-        snprintf(win_title, sizeof(win_title), "QEMU (%s-%d)%s", qemu_name,
+-                 scon->idx, status);
+-        snprintf(icon_title, sizeof(icon_title), "QEMU (%s)", qemu_name);
++        snprintf(win_title, sizeof(win_title), "%s%s", qemu_name, status);
++        snprintf(icon_title, sizeof(icon_title), "%s", qemu_name);
+     } else {
+         snprintf(win_title, sizeof(win_title), "QEMU%s", status);
+         snprintf(icon_title, sizeof(icon_title), "QEMU");
+@@ -1261,7 +1289,10 @@ static void sdl2_display_init(DisplayState *ds, DisplayOptions *o)
+ #endif
+     }
+ 
+-#ifdef CONFIG_SDL_IMAGE
++#if defined(_WIN32)
++    /* sdl2_window_create sets the executable's own icon. */
++    dir = NULL;
++#elif defined(CONFIG_SDL_IMAGE)
+     dir = get_relocated_path(CONFIG_QEMU_ICONDIR "/hicolor/128x128/apps/qemu.png");
+     icon = IMG_Load(dir);
+ #else
+diff --git a/version.rc b/version.rc
+index 5b074fd7..5c2cdd41 100644
+--- a/version.rc
++++ b/version.rc
+@@ -13,11 +13,11 @@ FILESUBTYPE VFT2_UNKNOWN
+   {
+     BLOCK "040904E4"
+     {
+-      VALUE "CompanyName", "WINQ-EMU Project"
+-      VALUE "FileDescription", "WINQ-EMU - GPU-Accelerated Linux VM for Windows"
++      VALUE "CompanyName", "FydeOS"
++      VALUE "FileDescription", "Try FydeOS"
+       VALUE "FileVersion", QEMU_VERSION
+-      VALUE "LegalCopyright", "Copyright WINQ-EMU Project and QEMU contributors. GPL-2.0-or-later."
+-      VALUE "ProductName", "WINQ-EMU"
++      VALUE "LegalCopyright", "Copyright FydeOS, WINQ-EMU Project and QEMU contributors. GPL-2.0-or-later."
++      VALUE "ProductName", "Try FydeOS"
+     }
+   }
+   BLOCK "VarFileInfo"
+@@ -26,7 +26,7 @@ FILESUBTYPE VFT2_UNKNOWN
+   }
+ }
+ 
+-IDI_ICON1 ICON "pc-bios/winq-emu.ico"
++IDI_ICON1 ICON "pc-bios/tryfydeos.ico"
+ 
+ /* Per-process UTF-8 for narrow Windows APIs; no host locale change. */
+ 1 24 "qemu.manifest"

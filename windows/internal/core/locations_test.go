@@ -7,6 +7,17 @@ import (
 	"testing"
 )
 
+func TestRuntimeBuild(t *testing.T) {
+	l := &Locations{Runtime: t.TempDir()}
+	if b := l.RuntimeBuild(); b != "" {
+		t.Fatalf("no README: %q", b)
+	}
+	os.WriteFile(filepath.Join(l.Runtime, "README.txt"), []byte("WINQ-EMU runtime for Try Omarchy\r\n\nmore\n"), 0o600)
+	if b := l.RuntimeBuild(); b != "WINQ-EMU runtime for Try Omarchy" {
+		t.Fatalf("RuntimeBuild %q", b)
+	}
+}
+
 func TestDiscoverLocations(t *testing.T) {
 	local := t.TempDir()
 	env := map[string]string{"LOCALAPPDATA": local}

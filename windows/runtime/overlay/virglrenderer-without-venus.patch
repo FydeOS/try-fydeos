@@ -1,0 +1,25 @@
+From: Try FydeOS contributors
+Subject: [PATCH] virglrenderer: build without Venus again
+
+Applies after Try Omarchy's virglrenderer 0001-0005 on
+cmspam/winq-emu-virglrenderer.
+
+The fork queries the Venus capset from vkr directly, which only links with
+-Dvenus=true. Fedora 43's mingw64 Vulkan headers (1.4.321) are older than
+the fork's Venus protocol, so this runtime builds without Venus; keep the
+upstream proxy query (a zero-size capset) for that case.
+
+--- a/src/virglrenderer.c
++++ b/src/virglrenderer.c
+@@ -575,7 +575,11 @@
+       break;
+    case VIRTGPU_DRM_CAPSET_VENUS:
+       *max_ver = 0;
++#ifdef ENABLE_VENUS
+       *max_size = vkr_get_capset(NULL, state.flags);
++#else
++      *max_size = proxy_get_capset(cap_set, NULL);
++#endif
+       break;
+    case VIRTGPU_DRM_CAPSET_DRM:
+       *max_ver = 0;

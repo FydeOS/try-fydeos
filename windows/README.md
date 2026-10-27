@@ -186,3 +186,92 @@ ShellExecute.
   instead of the Mac's min(8, cores) and 4/8 GiB by host RAM.
 - Strings: Mac texts verbatim except `subtitle` ("FYDEOS · WINDOWS") and
   `aboutCredits`. Hide is not in the menu (Windows minimises instead).
+
+## Own runtime
+
+`windows/runtime/` builds the Windows QEMU runtime ourselves instead of
+fetching Try Omarchy's zip: a cross-build on the workstation in Docker, with
+QEMU's Fedora 43 mingw64 recipe (`tests/docker/dockerfiles/fedora-win64-cross.docker`)
+as the toolchain. Same layout as the published zip, so the packer and core
+take either.
+
+```
+runtime/lock.json           every input by hash: Docker base image digest, the Try Omarchy recipe
+                            tarball (its 24 QEMU and 5 virglrenderer patches), the QEMU and
+                            virglrenderer fork commits, libslirp, SDL2, libepoxy + MSYS2's patches,
+                            the Fedora packages whose DLLs ship, our overlay
+runtime/Dockerfile          Fedora 43 + mingw64 toolchain and libraries
+runtime/build.sh            host side: fetch + verify, docker build, build without network, zip
+runtime/container-build.sh  inside the container: patch, build, collect DLLs/firmware/licenses
+runtime/overlay/            our patches (below)
+```
+
+```sh
+make win-runtime-build                 # out/win-runtime/ + out/win-runtime-<lock sha256 prefix>.zip (+ .sha256)
+make win-runtime                       # our pinned zip from out/ into out/win-runtime/ (default)
+make win-runtime WIN_RUNTIME=omarchy   # Try Omarchy's pinned zip into out/win-runtime/
+```
+
+The first run fetches about 30 MB of tarballs, the QEMU and virglrenderer
+forks (shallow) and three QEMU subprojects, and builds the Docker image
+(about 1 min each). The build itself runs with `--network=none` and takes
+about 4 min on the workstation (64 cores); it is reproducible (three builds
+gave the same zip). `windows/runtime.lock.json` pins Try Omarchy's zip at
+the top level and ours under `own`; `make win-dist` packs whatever is in
+`out/win-runtime/`. `tryfydeos doctor` prints the runtime's build from its
+`README.txt` ("Try FydeOS runtime for Windows, lock.json sha256 …" or
+"WINQ-EMU runtime for Try Omarchy").
+
+Sizes (lock a1112ddfcb0f): zip 41 MB, 116 MB unpacked (QEMU 82 MB unstripped,
+as in Try Omarchy's zip), runtime.zip in the packaged exe 43.5 MB.
+
+Stack: QEMU 11.0.0 (cmspam/winq-emu-qemu `2ce303cf` + Try Omarchy's 0001-0024),
+virglrenderer 1.3.0 (cmspam/winq-emu-virglrenderer `e80354b8` + 0001-0005),
+SDL2 2.32.10, libepoxy 1.5.10 with MSYS2's four patches, libslirp 4.9.3, all
+built from source; glib 2.86.5, pixman, zstd, libfdt, libffi, pcre2, gettext,
+win-iconv, zlib and the gcc runtime from Fedora 43 (+ updates).
+
+Overlay (`windows/runtime/overlay/`, applied after the Try Omarchy patches):
+
+- `qemu-sdl-product-identity.patch`: window title is the `-name` value
+  ("Try FydeOS", plus the grab/stopped hint), version resource
+  FileDescription/ProductName "Try FydeOS", CompanyName FydeOS (Task Manager
+  shows it), our icon (`cmd/TryFydeOSApp/TryFydeOS.ico`) as the exe and SDL
+  window icon. The exe keeps its name `qemu-system-x86_64w.exe`.
+- `qemu-sdl-close-powerdown.patch`: the close button asks "Shut down
+  FydeOS?" (Shut down / Cancel, Cancel default) in a MessageBox owned by the
+  window; Shut down presses the ACPI power button (QMP `POWERDOWN`). The
+  launcher takes an unrequested `POWERDOWN` as the first press and runs the
+  rest of the ladder: second press 2 s later, quit at 20 s, TerminateProcess
+  at 30 s; `run.json` keeps reason `guest-shutdown` and records
+  `shutdownRequest` "host-close: Shut down chosen in the FydeOS window".
+- `qemu-sdl-edid-density.patch`: the EDID density follows the window's
+  Windows scale, 110 DPI per scale unit as on the Mac (D8), so 100 % reads
+  110 DPI (QEMU's default was 100; both give Chrome scale 1) and 150 % reads
+  165 DPI (scale 1.5). The guest mode stays in window pixels; resizing
+  already followed the window.
+- `qemu-msvcrt-utf8-paths.patch`: Try Omarchy's 0009 aborts unless the
+  UCRT accepts a UTF-8 locale; Fedora's toolchain targets msvcrt, which
+  needs no locale for UTF-8 paths (checked with a non-ASCII disk path).
+- `virglrenderer-without-venus.patch`: the fork only links with Venus;
+  Fedora's Vulkan headers are too old for it, so Venus is off.
+
+Differences from Try Omarchy's MSYS2 build: msvcrt instead of UCRT; no
+Venus, no D3D11 video decode, no libusb; the zip carries only the windowed
+QEMU (no console QEMU, no `qemu-img`).
+
+Measuring the density on a scaled display: set `TRY_FYDEOS_EDID_DEBUG=1` in
+the environment of `tryfydeos run` (or the app); `qemu-stderr.log` in the
+run directory then logs `edid-density: window created: console 0, 165 DPI`
+at 150 %, and on every resize `edid-density: resized: …, W x H px, w x h mm`.
+In the guest, Chrome logs the chosen scale (`device_scale_factor:1.5`) in
+`/var/log/chrome/chrome`.
+
+Verified on the NUC (2026-10-27, monitor at 100 %): `--version` 11.0.0,
+`-accel help` lists whpx, `-display help` lists sdl, `virtio-vga-gl`
+has blob/hostmem; boot to OOBE with `+virgl`, HDA and QMP; title "Try FydeOS"
+with our icon in the title bar and taskbar, `Get-Process` Description and
+Product "Try FydeOS"; resize followed by the guest (EDID 340x170 mm for
+1484x721 px); close button → prompt, Cancel keeps running, Shut down →
+`guest-shutdown` 16 s later, launcher exit 0; `tryfydeos shutdown` still
+runs the two-press ladder.

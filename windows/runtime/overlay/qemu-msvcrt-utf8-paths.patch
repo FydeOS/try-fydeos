@@ -1,0 +1,30 @@
+From: Try FydeOS contributors
+Subject: [PATCH] win32: keep UTF-8 paths working with msvcrt
+
+Applies after qemu-sdl-edid-density.patch.
+
+Try Omarchy's 0009 sets the UCRT's LC_CTYPE to UTF-8 and exits when that
+fails, because the UCRT converts narrow paths with its own locale. This
+runtime is built with Fedora's mingw64 toolchain, which targets msvcrt:
+msvcrt has no UTF-8 locale, so the check aborted every start, and it
+needs none, since it hands narrow paths to the ANSI Win32 calls, which
+use the UTF-8 code page that 0009's manifest selects. Run the check on
+the UCRT only.
+
+diff --git a/util/cutils.c b/util/cutils.c
+index 5816f8e5..4bdeef8e 100644
+--- a/util/cutils.c
++++ b/util/cutils.c
+@@ -1056,10 +1056,12 @@ void qemu_init_exec_dir(const char *argv0)
+      * This runs before option parsing in both the emulator and qemu-img.
+      * Leave numeric parsing and formatting in the C locale.
+      */
++#ifdef _UCRT
+     if (!setlocale(LC_CTYPE, ".UTF8")) {
+         fprintf(stderr, "QEMU requires UTF-8 support in the Windows UCRT\n");
+         exit(EXIT_FAILURE);
+     }
++#endif
+ 
+     if (exec_dir) {
+         return;

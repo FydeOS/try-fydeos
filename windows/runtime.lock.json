@@ -2,5 +2,22 @@
   "name": "winq-emu-alpha10-portable.zip",
   "url": "https://github.com/omacom/try-omarchy-windows/releases/download/runtime-v1-r25/winq-emu-alpha10-portable.zip",
   "sha256": "ee4ee430f9b060552a2636197fe23598052559c946127ae293dfe447cd930f72",
-  "keep": ["bin", "LICENSES", "provenance", "README.txt"]
+  "keep": [
+    "bin",
+    "LICENSES",
+    "provenance",
+    "README.txt"
+  ],
+  "own": {
+    "name": "win-runtime-a1112ddfcb0f.zip",
+    "sha256": "edd0e6dc33afb6b8a879e63c5ad2b801e884a6d5755f7bc72f2a80bc099a0e87",
+    "keep": [
+      "bin",
+      "LICENSES",
+      "provenance",
+      "README.txt"
+    ],
+    "recipe": "windows/runtime/lock.json",
+    "build": "make win-runtime-build writes out/<name>; the build is reproducible"
+  }
 }

@@ -1,0 +1,219 @@
+From: Try FydeOS contributors
+Subject: [PATCH] sdl, edid: carry the Windows display scale in the EDID density
+
+Applies after qemu-sdl-close-powerdown.patch.
+
+Port of the macOS contract (docs/macos/design.md D8, Try Omarchy's
+qemu-cocoa-dynamic-display.patch): the guest mode stays in window pixels,
+and the EDID's physical size encodes the host scale at 110 DPI per scale
+unit, rounded to whole centimetres as the base block stores them. FydeOS
+picks its device scale factor from that density (project-vmware chromium
+patch 0173): 100 % reads 110 DPI and scale 1, 150 % reads 165 DPI and
+scale 1.5. SDL already makes the process per-monitor-v2 DPI aware and
+reports sizes in pixels.
+
+The scale is GetDpiForWindow / 96 of the SDL window. Each SDL window sets
+qemu_edid_dpi when it is created, so the EDID the guest reads before any
+resize (QEMU's default 100 DPI otherwise) carries it; every resize sends
+the window size with the matching width_mm/height_mm; a scale change that
+keeps the pixel size (moving to another monitor, changing the scale)
+sends the current size again. The guest mode is not changed at start: the
+window still follows the guest until the user resizes it.
+TRY_FYDEOS_EDID_DEBUG=1 logs each value to stderr ("edid-density: ...").
+
+diff --git a/hw/display/edid-generate.c b/hw/display/edid-generate.c
+index b701df5f..905c48dd 100644
+--- a/hw/display/edid-generate.c
++++ b/hw/display/edid-generate.c
+@@ -12,6 +12,7 @@
+  * Weak symbol so qemu-edid standalone tool links without console.c.
+  */
+ uint32_t __attribute__((weak)) qemu_edid_refresh_rate_mhz;
++uint32_t __attribute__((weak)) qemu_edid_dpi;
+ 
+ static const struct edid_mode {
+     uint32_t xres;
+@@ -416,6 +417,10 @@ void qemu_edid_generate(uint8_t *edid, size_t size,
+         width_mm = info->width_mm;
+         height_mm = info->height_mm;
+         dpi = qemu_edid_dpi_from_mm(width_mm, info->prefx);
++    } else if (qemu_edid_dpi) {
++        width_mm = qemu_edid_density_mm(qemu_edid_dpi, info->prefx);
++        height_mm = qemu_edid_density_mm(qemu_edid_dpi, info->prefy);
++        dpi = qemu_edid_dpi_from_mm(width_mm, info->prefx);
+     } else {
+         width_mm = qemu_edid_dpi_to_mm(dpi, info->prefx);
+         height_mm = qemu_edid_dpi_to_mm(dpi, info->prefy);
+diff --git a/include/hw/display/edid.h b/include/hw/display/edid.h
+index 91c0a428..4bb16e1d 100644
+--- a/include/hw/display/edid.h
++++ b/include/hw/display/edid.h
+@@ -24,6 +24,12 @@ void qemu_edid_region_io(MemoryRegion *region, Object *owner,
+ 
+ uint32_t qemu_edid_dpi_to_mm(uint32_t dpi, uint32_t res);
+ 
++/* res pixels at dpi in whole centimetres, the precision of the base block. */
++static inline uint32_t qemu_edid_density_mm(uint32_t dpi, uint32_t res)
++{
++    return 10 * MIN(255, MAX(1, (res * 254 + dpi * 50) / (dpi * 100)));
++}
++
+ #define DEFINE_EDID_PROPERTIES(_state, _edid_info)                         \
+     DEFINE_PROP_UINT32("xres", _state, _edid_info.prefx, 0),               \
+     DEFINE_PROP_UINT32("yres", _state, _edid_info.prefy, 0),               \
+diff --git a/include/ui/console.h b/include/ui/console.h
+index 120f8207..cf7858df 100644
+--- a/include/ui/console.h
++++ b/include/ui/console.h
+@@ -50,6 +50,9 @@ OBJECT_DECLARE_SIMPLE_TYPE(QemuFixedTextConsole, QEMU_FIXED_TEXT_CONSOLE)
+ /* Global EDID refresh rate from -display refresh-rate= option (millihertz) */
+ extern uint32_t qemu_edid_refresh_rate_mhz;
+ 
++/* Density of the default EDID, 0 for QEMU's 100 DPI; set by the SDL display. */
++extern uint32_t qemu_edid_dpi;
++
+ /* Color number is match to standard vga palette */
+ enum qemu_color_names {
+     QEMU_COLOR_BLACK   = 0,
+diff --git a/include/ui/sdl2.h b/include/ui/sdl2.h
+index a4ac4a3d..72d4abe2 100644
+--- a/include/ui/sdl2.h
++++ b/include/ui/sdl2.h
+@@ -55,6 +55,7 @@ struct sdl2_console {
+     int guest_x, guest_y;
+     int cursor_width, cursor_height;
+     bool has_dmabuf;
++    uint32_t edid_dpi;
+ #ifdef CONFIG_OPENGL
+     QemuGLShader *gls;
+     egl_fb guest_fb;
+diff --git a/ui/console.c b/ui/console.c
+index 51256420..ac298b79 100644
+--- a/ui/console.c
++++ b/ui/console.c
+@@ -27,6 +27,7 @@
+ #include "hw/core/qdev.h"
+ 
+ uint32_t qemu_edid_refresh_rate_mhz;
++uint32_t qemu_edid_dpi;
+ #include "qapi/error.h"
+ #include "qapi/qapi-commands-ui.h"
+ #include "qapi/visitor.h"
+diff --git a/ui/sdl2.c b/ui/sdl2.c
+index 5b6a0fd0..9c504c38 100644
+--- a/ui/sdl2.c
++++ b/ui/sdl2.c
+@@ -35,6 +35,7 @@
+ #include "qemu/log.h"
+ #include "qemu-main.h"
+ #include "qapi/qapi-events-ui.h"
++#include "hw/display/edid.h"
+ #include "sdl2-pinch-win32.h"
+ 
+ #ifdef CONFIG_X11
+@@ -87,6 +88,65 @@ static struct sdl2_console *get_scon_from_window(uint32_t window_id)
+     return NULL;
+ }
+ 
++#ifdef _WIN32
++/*
++ * EDID density follows the host scale as on the Mac (docs/macos/design.md
++ * D8): 110 DPI per unit of the window's DPI scale, 96 DPI being 100 %. The
++ * guest mode stays in window pixels; FydeOS picks its device scale factor
++ * from the density.
++ */
++static uint32_t sdl2_window_edid_dpi(SDL_Window *window)
++{
++    static UINT (WINAPI *get_dpi_for_window)(HWND);
++    SDL_SysWMinfo wm;
++    UINT dpi = 0;
++
++    if (!get_dpi_for_window) {
++        get_dpi_for_window = (void *)GetProcAddress(GetModuleHandleW(L"user32.dll"),
++                                                    "GetDpiForWindow");
++    }
++    SDL_VERSION(&wm.version);
++    if (get_dpi_for_window && window && SDL_GetWindowWMInfo(window, &wm)) {
++        dpi = get_dpi_for_window(wm.info.win.window);
++    }
++    return (MAX(dpi, 96) * 110 + 48) / 96;
++}
++
++static void sdl2_edid_debug(const char *what, struct sdl2_console *scon,
++                            const QemuUIInfo *info)
++{
++    if (g_strcmp0(getenv("TRY_FYDEOS_EDID_DEBUG"), "1")) {
++        return;
++    }
++    if (info) {
++        fprintf(stderr, "edid-density: %s: console %d, %u DPI, %ux%u px, %ux%u mm\n",
++                what, scon->idx, scon->edid_dpi, info->width, info->height,
++                info->width_mm, info->height_mm);
++    } else {
++        fprintf(stderr, "edid-density: %s: console %d, %u DPI\n",
++                what, scon->idx, scon->edid_dpi);
++    }
++}
++#endif
++
++static void sdl2_send_ui_info(struct sdl2_console *scon, int width, int height,
++                              const char *why)
++{
++    QemuUIInfo info;
++
++    memset(&info, 0, sizeof(info));
++    info.width = width;
++    info.height = height;
++#ifdef _WIN32
++    scon->edid_dpi = sdl2_window_edid_dpi(scon->real_window);
++    qemu_edid_dpi = scon->edid_dpi;
++    info.width_mm = qemu_edid_density_mm(scon->edid_dpi, width);
++    info.height_mm = qemu_edid_density_mm(scon->edid_dpi, height);
++    sdl2_edid_debug(why, scon, &info);
++#endif
++    dpy_set_ui_info(scon->dcl.con, &info, true);
++}
++
+ #ifdef _WIN32
+ /* The executable's icon resource (version.rc), at the sizes Windows asks for. */
+ static void sdl2_set_resource_icon(SDL_Window *window)
+@@ -178,6 +238,10 @@ void sdl2_window_create(struct sdl2_console *scon)
+     sdl_update_caption(scon);
+ #ifdef _WIN32
+     sdl2_set_resource_icon(scon->real_window);
++    /* The default EDID (before any resize) carries the host density too. */
++    scon->edid_dpi = sdl2_window_edid_dpi(scon->real_window);
++    qemu_edid_dpi = scon->edid_dpi;
++    sdl2_edid_debug("window created", scon, NULL);
+ #endif
+ }
+ 
+@@ -871,15 +935,21 @@ static void handle_windowevent(SDL_Event *ev)
+ 
+     switch (ev->window.event) {
+     case SDL_WINDOWEVENT_RESIZED:
+-        {
+-            QemuUIInfo info;
+-            memset(&info, 0, sizeof(info));
+-            info.width = ev->window.data1;
+-            info.height = ev->window.data2;
+-            dpy_set_ui_info(scon->dcl.con, &info, true);
+-        }
++        sdl2_send_ui_info(scon, ev->window.data1, ev->window.data2, "resized");
+         sdl2_redraw(scon);
+         break;
++#ifdef _WIN32
++    case SDL_WINDOWEVENT_SIZE_CHANGED:
++    case SDL_WINDOWEVENT_DISPLAY_CHANGED:
++        /* A scale change that leaves the pixel size alone sends no RESIZED. */
++        if (sdl2_window_edid_dpi(scon->real_window) != scon->edid_dpi) {
++            int width, height;
++
++            SDL_GetWindowSize(scon->real_window, &width, &height);
++            sdl2_send_ui_info(scon, width, height, "scale changed");
++        }
++        break;
++#endif
+     case SDL_WINDOWEVENT_EXPOSED:
+         sdl2_redraw(scon);
+         break;

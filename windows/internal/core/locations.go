@@ -49,6 +49,18 @@ func (l *Locations) QEMU() string {
 	return filepath.Join(bin, QEMUNames[0])
 }
 
+// RuntimeBuild is the first line of the runtime's README.txt, which names the
+// build ("WINQ-EMU runtime for Try Omarchy", "Try FydeOS runtime for Windows,
+// lock ..."); empty when there is none.
+func (l *Locations) RuntimeBuild() string {
+	data, err := os.ReadFile(filepath.Join(l.Runtime, "README.txt"))
+	if err != nil {
+		return ""
+	}
+	line, _, _ := strings.Cut(string(data), "\n")
+	return strings.TrimSpace(line)
+}
+
 // FactoryImageCandidates: TRY_FYDEOS_FACTORY_IMAGE, then the spec's own directory.
 func (l *Locations) FactoryImageCandidates(spec *FactorySpec) []string {
 	var c []string

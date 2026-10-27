@@ -34,7 +34,8 @@ help:
 	@echo "make run        boot the VM with defaults (Mac; WORKSPACE=dir RUN_ARGS='--cpus 6')"
 	@echo "make inspect    print the QEMU argv run would use (Mac)"
 	@echo "make test       run unit tests (Python, plus Swift on the Mac)"
-	@echo "make win-runtime fetch, verify and unpack the pinned Windows QEMU runtime into out/win-runtime/"
+	@echo "make win-runtime fetch, verify and unpack the pinned Windows QEMU runtime into out/win-runtime/ (WIN_RUNTIME=own|omarchy)"
+	@echo "make win-runtime-build  cross-build our Windows QEMU runtime in Docker into out/win-runtime/ + out/win-runtime-<lock sha>.zip"
 	@echo "make win-build  cross-build tryfydeos.exe (CLI) and Try FydeOS.exe (GUI) into out/win-build/"
 	@echo "make win-rsrc   render the icon and compile windows/versioninfo.rc into the GUI's .syso"
 	@echo "make win-test   run the Go unit tests of windows/ on this host"
@@ -115,10 +116,16 @@ WIN_SPEC ?= factory/amd64-vmware-io.json
 WIN_VERSION = $(shell sed -n 's/.*"ProductVersion", "\(.*\)".*/\1/p' windows/versioninfo.rc)
 WIN_DIST = dist/Try FydeOS-$(WIN_VERSION).exe
 
-.PHONY: win-runtime win-build win-rsrc win-test win-sync win-image win-dist
+# own: our build pinned in windows/runtime.lock.json; omarchy: Try Omarchy's published zip.
+WIN_RUNTIME ?= own
+
+.PHONY: win-runtime win-runtime-build win-build win-rsrc win-test win-sync win-image win-dist
 
 win-runtime:
-	windows/scripts/fetch-runtime.sh
+	windows/scripts/fetch-runtime.sh $(WIN_RUNTIME)
+
+win-runtime-build:
+	windows/runtime/build.sh
 
 win-build:
 	mkdir -p out/win-build
