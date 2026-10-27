@@ -1,0 +1,36 @@
+// Resources of "Try FydeOS.exe": icon, common-controls v6 manifest, version block.
+// scripts/make-rsrc.sh compiles this into cmd/TryFydeOSApp/rsrc_windows_amd64.syso.
+// Keep the version in step with appVersion in cmd/TryFydeOSApp/main_windows.go.
+
+// LoadImageW(instance, 1, IMAGE_ICON, ...) in the app resolves this group.
+1 ICON "cmd/TryFydeOSApp/TryFydeOS.ico"
+
+1 24 "TryFydeOS.manifest"
+
+1 VERSIONINFO
+FILEVERSION 0, 1, 0, 0
+PRODUCTVERSION 0, 1, 0, 0
+FILEFLAGSMASK 0x3fL
+FILEFLAGS 0x0L
+FILEOS 0x40004L
+FILETYPE 0x1L
+FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "FydeOS"
+            VALUE "FileDescription", "Try FydeOS"
+            VALUE "FileVersion", "0.1.0"
+            VALUE "InternalName", "TryFydeOS"
+            VALUE "OriginalFilename", "Try FydeOS.exe"
+            VALUE "ProductName", "Try FydeOS"
+            VALUE "ProductVersion", "0.1.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

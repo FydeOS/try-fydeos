@@ -2,6 +2,8 @@ package core
 
 import (
 	"bufio"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -29,13 +31,14 @@ type LaunchOptions struct {
 	CPUs         int
 	MemoryMiB    int
 	FullScreen   bool
+	Microphone   bool
 	CPUFallback  bool
 	HostForwards []HostForward
 }
 
 func (o LaunchOptions) Config(loc *Locations, ws *Workspace, runDir, mac string) *VMConfig {
 	return &VMConfig{
-		CPUs: o.CPUs, MemoryMiB: o.MemoryMiB, FullScreen: o.FullScreen, CPUFallback: o.CPUFallback,
+		CPUs: o.CPUs, MemoryMiB: o.MemoryMiB, FullScreen: o.FullScreen, Microphone: o.Microphone, CPUFallback: o.CPUFallback,
 		HostForwards: o.HostForwards, MAC: mac,
 		Paths: VMPaths{
 			QEMU: loc.QEMU(), FirmwareCode: loc.FirmwareCode(), EFIVars: ws.EFIVars(), Disk: ws.Disk(),
@@ -78,6 +81,7 @@ type Session struct {
 	qmp            *QMPClient
 	shutdownReason string
 	terminated     bool
+	pausedForSleep bool
 	shutdownOnce   sync.Once
 }
 
@@ -241,8 +245,87 @@ func (s *Session) serveControl(l net.Listener) {
 func (s *Session) RequestShutdown(reason string) {
 	s.shutdownOnce.Do(func() {
 		s.Log(reason)
+		s.saveRecord(func(r *RunRecord) { r.ShutdownRequest = reason })
 		go s.ladder()
 	})
+}
+
+func (s *Session) Pid() int { return s.cmd.Process.Pid }
+
+// WaitQMP blocks until the supervisor holds the QMP connection, or says why it never will.
+func (s *Session) WaitQMP() error {
+	<-s.attached
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.qmp != nil {
+		return nil
+	}
+	select {
+	case <-s.exited:
+		return errors.New("QEMU exited before QMP answered")
+	default:
+		return fmt.Errorf("QMP not ready %d s after start", int(QMPConnectDeadline.Seconds()))
+	}
+}
+
+func (s *Session) qmpClient() *QMPClient {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.qmp
+}
+
+// PauseForSleep stops a running guest before the host sleeps; ResumeAfterWake
+// continues it only if this stop paused it.
+func (s *Session) PauseForSleep() {
+	c := s.qmpClient()
+	if c == nil {
+		s.Log("host sleep: no QMP connection, not stopping the guest")
+		return
+	}
+	raw, err := c.Execute("query-status", nil)
+	var status struct {
+		Running bool   `json:"running"`
+		Status  string `json:"status"`
+	}
+	if err == nil {
+		err = json.Unmarshal(raw, &status)
+	}
+	if err != nil {
+		s.Log("host sleep: query-status: " + err.Error())
+		return
+	}
+	if !status.Running {
+		s.Log("host sleep: guest is " + status.Status + ", not stopping it")
+		return
+	}
+	if _, err := c.Execute("stop", nil); err != nil {
+		s.Log("host sleep: QMP stop failed: " + err.Error())
+		return
+	}
+	s.mu.Lock()
+	s.pausedForSleep = true
+	s.mu.Unlock()
+	s.Log("host sleep: QMP stop")
+}
+
+func (s *Session) ResumeAfterWake() {
+	s.mu.Lock()
+	ours := s.pausedForSleep
+	s.pausedForSleep = false
+	c := s.qmp
+	s.mu.Unlock()
+	if !ours {
+		s.Log("host wake: no stop of ours to undo")
+		return
+	}
+	if c == nil {
+		return
+	}
+	if _, err := c.Execute("cont", nil); err != nil {
+		s.Log("host wake: QMP cont failed: " + err.Error())
+		return
+	}
+	s.Log("host wake: QMP cont")
 }
 
 // ladder: system_powerdown, again 2 s later, QMP quit at 20 s, TerminateProcess at 30 s.

@@ -63,7 +63,8 @@ func (l *Locations) FactoryImage(spec *FactorySpec) (string, error) {
 }
 
 // DiscoverLocations resolves defaults next to the executable and under
-// %LOCALAPPDATA%\Try FydeOS; preferences.json and then TRY_FYDEOS_* override them.
+// %LOCALAPPDATA%\Try FydeOS; preferences.json and then TRY_FYDEOS_* override them
+// (TRY_FYDEOS_SPEC wins over the spec next to TRY_FYDEOS_FACTORY_IMAGE).
 func DiscoverLocations(getenv func(string) string, exeDir string) (*Locations, error) {
 	local := getenv("LOCALAPPDATA")
 	if local == "" {
@@ -109,6 +110,9 @@ func DiscoverLocations(getenv func(string) string, exeDir string) (*Locations, e
 	if v := getenv("TRY_FYDEOS_FACTORY_IMAGE"); v != "" {
 		l.FactoryImageOverride = v
 		l.Spec = filepath.Join(filepath.Dir(v), SpecFileName)
+	}
+	if v := getenv("TRY_FYDEOS_SPEC"); v != "" {
+		l.Spec = v
 	}
 	return l, nil
 }

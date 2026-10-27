@@ -47,6 +47,11 @@ func TestDiscoverLocations(t *testing.T) {
 		t.Fatalf("candidates %v", got)
 	}
 
+	env["TRY_FYDEOS_SPEC"] = "/specs/s.json"
+	if l, err = DiscoverLocations(getenv, "/app"); err != nil || l.Spec != "/specs/s.json" {
+		t.Fatalf("TRY_FYDEOS_SPEC %+v %v", l, err)
+	}
+
 	env["TRY_FYDEOS_FORWARDS"] = "nope"
 	if _, err := DiscoverLocations(getenv, "/app"); err == nil {
 		t.Fatal("accepted a malformed forward")

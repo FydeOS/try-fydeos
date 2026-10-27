@@ -58,6 +58,7 @@ func TestArgvMatchesContract(t *testing.T) {
 func TestArgvOptions(t *testing.T) {
 	c := testConfig()
 	c.FullScreen = true
+	c.Microphone = true
 	c.CPUFallback = true
 	c.HostForwards = nil
 	argv, err := c.Argv(testHost)
@@ -65,7 +66,7 @@ func TestArgvOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	joined := strings.Join(argv, " ")
-	for _, s := range []string{"-cpu qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt,+aes ", "-display sdl,gl=on,show-cursor=off,full-screen=on ", "-netdev user,id=net "} {
+	for _, s := range []string{"-cpu qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt,+aes ", "-display sdl,gl=on,show-cursor=off,full-screen=on ", "-netdev user,id=net ", "-device hda-micro,bus=hda.0,audiodev=audio "} {
 		if !strings.Contains(joined, s) {
 			t.Errorf("missing %q in %s", s, joined)
 		}

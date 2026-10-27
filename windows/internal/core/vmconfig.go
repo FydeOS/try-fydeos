@@ -50,6 +50,7 @@ type VMConfig struct {
 	CPUs         int
 	MemoryMiB    int
 	FullScreen   bool
+	Microphone   bool
 	CPUFallback  bool
 	HostForwards []HostForward
 	Paths        VMPaths
@@ -139,6 +140,10 @@ func (c *VMConfig) Argv(host HostInfo) ([]string, error) {
 	if c.FullScreen {
 		display += ",full-screen=on"
 	}
+	codec := "hda-output"
+	if c.Microphone {
+		codec = "hda-micro"
+	}
 	return []string{
 		p.QEMU,
 		"-name", "Try FydeOS",
@@ -156,7 +161,7 @@ func (c *VMConfig) Argv(host HostInfo) ([]string, error) {
 		"-device", "virtio-keyboard-pci,id=keyboard,romfile=,addr=0x6",
 		"-device", "virtio-tablet-pci,id=tablet,romfile=,addr=0x7",
 		"-audiodev", "sdl,id=audio", "-device", "intel-hda,id=hda,romfile=,addr=0x1b",
-		"-device", "hda-output,bus=hda.0,audiodev=audio",
+		"-device", codec + ",bus=hda.0,audiodev=audio",
 		"-device", "virtio-rng-pci,id=rng,romfile=,addr=0x8",
 		"-serial", "file:" + p.Console, "-D", p.QEMULog, "-monitor", "none",
 		"-qmp", "unix:" + p.QMPSocket + ",server=on,wait=off",

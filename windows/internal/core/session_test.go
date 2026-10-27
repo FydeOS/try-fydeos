@@ -38,6 +38,9 @@ func runFakeQEMU(mode string) {
 			sock = strings.TrimSuffix(strings.TrimPrefix(os.Args[i+1], "unix:"), ",server=on,wait=off")
 		}
 	}
+	if mode == "exit" {
+		os.Exit(1)
+	}
 	l, err := net.Listen("unix", sock)
 	if err != nil {
 		os.Exit(3)
@@ -54,6 +57,7 @@ func runFakeQEMU(mode string) {
 	}
 	send(`{"QMP": {"version": {}, "capabilities": []}}`)
 	powerdowns := 0
+	running := true
 	sc := bufio.NewScanner(conn)
 	for sc.Scan() {
 		var m struct {
@@ -61,6 +65,13 @@ func runFakeQEMU(mode string) {
 			ID      int    `json:"id"`
 		}
 		json.Unmarshal(sc.Bytes(), &m)
+		switch m.Execute {
+		case "query-status":
+			send(sprintf(`{"return": {"running": %t, "status": "%s"}, "id": %d}`, running, map[bool]string{true: "running", false: "paused"}[running], m.ID))
+			continue
+		case "stop", "cont":
+			running = m.Execute == "cont"
+		}
 		send(sprintf(`{"return": {}, "id": %d}`, m.ID))
 		switch {
 		case mode == "reset" && m.Execute == "qmp_capabilities":
@@ -135,7 +146,8 @@ func TestSessionShutdownThroughControlSocket(t *testing.T) {
 		t.Fatalf("exit %+v\n%s", e, log)
 	}
 	_, r, err := ws.LastRun()
-	if err != nil || r.End == "" || r.QMPReady == "" || r.ExitCode == nil || *r.ExitCode != 0 || r.Reason != "guest-shutdown" || r.Pid == 0 {
+	if err != nil || r.End == "" || r.QMPReady == "" || r.ExitCode == nil || *r.ExitCode != 0 || r.Reason != "guest-shutdown" || r.Pid == 0 ||
+		r.ShutdownRequest != "shutdown requested on the control socket" {
 		t.Fatalf("run.json %+v %v", r, err)
 	}
 	for _, p := range []string{ws.QMPSocket(), ws.ControlSocket()} {
@@ -172,4 +184,55 @@ func TestSessionLadderTerminatesAHungQEMU(t *testing.T) {
 			t.Errorf("ladder step %q missing:\n%s", step, log)
 		}
 	}
+}
+
+func TestSessionSleepPause(t *testing.T) {
+	s, _ := launchFake(t, "guest")
+	if err := s.WaitQMP(); err != nil {
+		t.Fatal(err)
+	}
+	if s.Pid() == 0 {
+		t.Fatal("no pid")
+	}
+	status := func() bool {
+		raw, err := s.qmpClient().Execute("query-status", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.Contains(string(raw), `"running":true`) || strings.Contains(string(raw), `"running": true`)
+	}
+	s.ResumeAfterWake()
+	if !status() {
+		t.Fatal("wake without our stop paused the guest")
+	}
+	s.PauseForSleep()
+	if status() {
+		t.Fatal("guest still running after PauseForSleep")
+	}
+	s.ResumeAfterWake()
+	if !status() {
+		t.Fatal("guest not continued after our stop")
+	}
+	s.qmpClient().Execute("stop", nil)
+	s.PauseForSleep()
+	s.ResumeAfterWake()
+	if status() {
+		t.Fatal("cont although the guest was paused by someone else")
+	}
+	s.RequestShutdown("test")
+	waitExit(t, s)
+	log, _ := os.ReadFile(filepath.Join(s.Dir, "supervisor.log"))
+	for _, line := range []string{"host wake: no stop of ours to undo", "host sleep: QMP stop", "host sleep: guest is paused, not stopping it", "host wake: QMP cont"} {
+		if !strings.Contains(string(log), line) {
+			t.Errorf("missing %q:\n%s", line, log)
+		}
+	}
+}
+
+func TestWaitQMPReportsEarlyExit(t *testing.T) {
+	s, _ := launchFake(t, "exit")
+	if err := s.WaitQMP(); err == nil || !strings.Contains(err.Error(), "exited before QMP") {
+		t.Fatalf("WaitQMP %v", err)
+	}
+	waitExit(t, s)
 }

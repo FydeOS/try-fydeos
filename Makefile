@@ -35,9 +35,10 @@ help:
 	@echo "make inspect    print the QEMU argv run would use (Mac)"
 	@echo "make test       run unit tests (Python, plus Swift on the Mac)"
 	@echo "make win-runtime fetch, verify and unpack the pinned Windows QEMU runtime into out/win-runtime/"
-	@echo "make win-build  cross-build tryfydeos.exe into out/win-build/"
+	@echo "make win-build  cross-build tryfydeos.exe (CLI) and Try FydeOS.exe (GUI) into out/win-build/"
+	@echo "make win-rsrc   render the icon and compile windows/versioninfo.rc into the GUI's .syso"
 	@echo "make win-test   run the Go unit tests of windows/ on this host"
-	@echo "make win-sync   copy the Windows build, spec and sources to the NUC ($(NUC_DIR))"
+	@echo "make win-sync   copy both exes, spec and sources to the NUC ($(NUC_DIR))"
 	@echo "make win-image  compress the amd64 raw image for factory/ (WIN_RAW=... WIN_ZST=...)"
 
 sync:
@@ -109,7 +110,7 @@ NUC_DIR ?= D:/try-fydeos/dev
 WIN_RAW ?= out/amd64/chromiumos_image-R150-16700.56.0-d2026_10_27_112641-a1.bin
 WIN_ZST ?= factory/fydeos-amd64-vmware-io-R150-16700.56.0-d20261027.bin.zst
 
-.PHONY: win-runtime win-build win-test win-sync win-image
+.PHONY: win-runtime win-build win-rsrc win-test win-sync win-image
 
 win-runtime:
 	windows/scripts/fetch-runtime.sh
@@ -117,6 +118,10 @@ win-runtime:
 win-build:
 	mkdir -p out/win-build
 	cd windows && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o ../out/win-build/tryfydeos.exe ./cmd/tryfydeos
+	cd windows && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-H windowsgui -s -w" -o "../out/win-build/Try FydeOS.exe" ./cmd/TryFydeOSApp
+
+win-rsrc:
+	windows/scripts/make-rsrc.sh
 
 win-test:
 	cd windows && go vet ./... && go test ./...

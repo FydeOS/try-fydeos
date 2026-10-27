@@ -33,6 +33,8 @@ type RunRecord struct {
 	End           string   `json:"end,omitempty"`
 	ExitCode      *int     `json:"exitCode,omitempty"`
 	Reason        string   `json:"reason,omitempty"`
+	// ShutdownRequest is why the supervisor ran the shutdown ladder, empty if it never did.
+	ShutdownRequest string `json:"shutdownRequest,omitempty"`
 }
 
 type WorkspaceState int
