@@ -205,6 +205,13 @@ in session 0).
 2. Guest behaviour under WHPX: idle for 10 min on the login screen (S3 vs
    s2idle, wake by input), restart from the guest menu, hard window close,
    Venus on/off. Decide the amd64 `disable_idle_suspend` follow-up.
+   Done 2026-10-27: idle suspend is fatal (see TODO, parked); restart
+   from the guest menu exits QEMU with `guest-reset` and the supervisor
+   relaunches it 2 s later, new run directory, QMP attached again; the
+   window's close button ends the run with reason `host-ui`, exit 0, the
+   launcher exits and releases the lock, the next boot replays the FAT
+   and ext4 journals. Venus not measured (no Vulkan consumer in the
+   guest yet; revisit with the own runtime).
 3. App: start menu, supervision, sleep pause, logs, focus. Check: every
    path clicked by hand on the NUC.
 4. Package: `make win-dist`, unzip-and-run on a fresh Windows user,
@@ -234,3 +241,18 @@ in session 0).
   fast-startup resume is measured in milestone 2.
 - Antivirus: a 7 GB sparse write and an 80 MB QEMU binary may be slowed
   or quarantined by Defender on first run; unsigned exe plus SmartScreen.
+
+## TODO (parked)
+
+- **Idle suspend is fatal under WHPX** (measured 2026-10-27, parked by Wei).
+  powerd's sign-in-screen policy suspends the guest after ~10 idle
+  minutes; q35 advertises S3, so the kernel enters real S3 and QEMU parks
+  the VM. Host input cannot wake it (virtio-input never requests a
+  wake-up; only QMP `system_wakeup`, the RTC and PS/2 do), and a forced
+  QMP wake-up kills it: WHPX fails to restart the vCPUs (`WHPX: Unexpected
+  VP exit code 4` per vCPU, GUEST_PANICKED, power-off). Try Omarchy's
+  `ICH9-LPC.disable_s3=1` would only move the guest to s2idle, which is
+  unwakeable for the reasons analysed on arm64. Fix = guest-side, mirror of
+  arm64 7c5f8f0: add `files/powerd/disable_idle_suspend` (content `1`) to
+  `chromeos-bsp-amd64-openfyde_vmware` and bump r3→r4; needs a new
+  amd64-vmware-io image. Until then a VM left idle for 10 minutes is lost.
