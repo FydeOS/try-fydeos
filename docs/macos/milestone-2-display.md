@@ -7,7 +7,7 @@ Date: 2026-10-16. Host: Apple M4, macOS 27.0.1, one display. Factory image
 defaults otherwise (`zoom-to-fit=on`, windowed).
 
 Superseded the same day: the point-mode report below was replaced by
-backing pixels plus a guest-side scale factor, see `decisions.md` D8. The
+backing pixels plus a guest-side scale factor, see `../decisions.md` D8. The
 measurements and the window-master hunks still stand; `TRY_FYDEOS_HIDPI`
 no longer exists.
 

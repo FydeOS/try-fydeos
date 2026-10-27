@@ -1,7 +1,8 @@
 # Try FydeOS for Windows
 
-Date: 2026-10-27. Owner: Wei. Companion to `design.md` (macOS); this file
-holds the Windows architecture and plan. Changes go through `decisions.md`.
+Date: 2026-10-27. Owner: Wei. The Windows architecture and plan; the
+product-wide view is `../design.md`, the macOS app is `../macos/design.md`,
+decisions go through `../decisions.md`.
 
 ## Goal
 

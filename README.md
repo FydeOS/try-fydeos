@@ -1,43 +1,59 @@
 # Try FydeOS
 
-Run FydeOS on a Mac without installing it. Try FydeOS wraps a patched QEMU
-with Apple's Hypervisor framework and VirGL graphics around a stock FydeOS
-`arm64-vmware-io` image, the same image FydeOS ships for VMware.
+Run FydeOS on a Mac or a Windows PC without installing it. Try FydeOS
+wraps QEMU and the host's hypervisor around the stock FydeOS vmware image,
+the same image FydeOS ships for VMware: `arm64-vmware-io` on Apple Silicon,
+`amd64-vmware-io` on x86-64 Windows. A Linux version is planned.
 
-Modeled on [Try Omarchy](https://tryomarchy.com) (MIT). The QEMU runtime
-recipe is Try Omarchy's, consumed by pinned commit and hash; the launcher,
-storage, lifecycle and guest contract are this project's own.
+Modeled on [Try Omarchy](https://tryomarchy.com) (MIT). The QEMU runtimes
+come from Try Omarchy's recipes, consumed by pinned commit and hash; the
+launchers, storage, lifecycle and guest contract are this project's own.
 
-Status: milestone 4, packaging. `make app` assembles an ad-hoc signed
-`dist/Try FydeOS.app` (~170 MB, no image inside) and `make dmg` wraps it with
-the FydeOS image in `dist/Try FydeOS-<version>.dmg`. No Developer ID yet.
+Status:
+
+- macOS: `make app` assembles an ad-hoc signed `dist/Try FydeOS.app` and
+  `make dmg` wraps it with the FydeOS image in `dist/Try FydeOS-<version>.dmg`.
+  No Developer ID yet.
+- Windows: `make win-build` cross-compiles `Try FydeOS.exe` and the
+  `tryfydeos` CLI; both boot FydeOS on the test machine. Packaging as a
+  portable zip is next. No code-signing certificate yet.
 
 ## Layout
 
 ```
-Makefile          doctor · fetch · runtime · firmware · prepare · run · icon · app · app-run · dmg · dmg-stage · test
-runtime/          QEMU runtime build: lock.json, runtime.py, overlay patches, entitlements
-firmware/         edk2 UEFI pair pinned by SHA-256
-factory/          spec.json describing the pinned FydeOS factory image
+Makefile          Mac: doctor · fetch · runtime · firmware · prepare · run · icon · app · app-run · dmg · dmg-stage
+                  Windows (run on the workstation): win-runtime · win-build · win-test · win-rsrc · win-image · win-sync
+                  both: sync · test
+docs/             design.md (overview), decisions.md; macos/ and windows/ hold each platform's design.md and records
+factory/          one spec per board (spec.json = arm64, amd64-vmware-io.json); images never committed
+runtime/          macOS QEMU runtime build: lock.json, runtime.py, overlay patches, entitlements
+firmware/         edk2 UEFI pair for the macOS runtime, pinned by SHA-256
 macos/            Swift package: TryFydeOSCore, tryfydeos CLI, TryFydeOSAppModel + the AppKit app;
                   Resources/ (Info.plist, entitlements, icon SVG), scripts/ (build-app.sh, package-dmg.sh, make-icon.sh)
-windows/          Go module for the Windows port (docs/windows.md): internal/core, tryfydeos CLI, runtime.lock.json
-docs/             design.md, decisions.md, carried-over-findings.md
+windows/          Go module: internal/core, internal/app, cmd/tryfydeos, cmd/TryFydeOSApp, runtime.lock.json, scripts/
 tests/            contract tests that run without a VM
 ```
 
 ## Hosts
 
-- Build and run: Apple Silicon Mac, macOS 15 or newer, Command Line Tools,
-  Homebrew `pkg-config` and `python3` 3.12+. No Docker, no Homebrew QEMU.
-- Factory image: built on a FydeOS development workstation with
-  `cros build-image --board=arm64-vmware-io`. The image is never committed.
+- macOS build and run: Apple Silicon Mac, macOS 15 or newer, Command Line
+  Tools, Homebrew `pkg-config` and `python3` 3.12+. No Docker, no Homebrew
+  QEMU.
+- Windows build: any machine with Go 1.24+ (the launcher is pure Go and
+  cross-compiles), plus `llvm-rc`, `llvm-cvtres` and ImageMagick to
+  regenerate the icon resources. Windows run: 64-bit Windows 10 or 11 on
+  x86-64 with hardware virtualization and the Windows Hypervisor Platform
+  enabled, on an NTFS or ReFS drive.
+- Factory images: `cros build-image` output for the vmware boards, or the
+  release build for the board. The images are never committed.
 
 ## Workflow
 
-The tree is authored on the workstation at `~/workspace/try-fydeos` and
-synced to the Mac at `~/Workspace/try-fydeos` with `make sync`. Build output
-and caches live only on the Mac under `.cache/`, `out/`, `macos/.build/` and `dist/`.
+The tree is authored on the workstation at `~/workspace/try-fydeos`.
+
+macOS: synced to the Mac at `~/Workspace/try-fydeos` with `make sync`;
+build output and caches live only on the Mac under `.cache/`, `out/`,
+`macos/.build/` and `dist/`.
 
 ```sh
 make sync           # workstation -> Mac
@@ -50,16 +66,30 @@ make dmg            # dist/Try FydeOS-<version>.dmg (DMG_ARGS='--sign-identity I
 make dmg-stage      # only stage the DMG layout in dist/stage/
 ```
 
-The app carries the FydeOS image zstd-compressed (1.36 GB) in
-`Contents/Resources/factory/`. Preparing a VM unpacks it with the bundled
-`zstd` into the workspace (about 3 s on an M4), checks the raw size and
-grows the file, sparse, to the 64 GiB `diskBytes` of `factory/spec.json`.
-`TRY_FYDEOS_FACTORY_IMAGE` points at another `.zst`; in the repository the
-image is `factory/<file>`. Factory reset deletes the disk; the next launch
-unpacks again.
+Windows: built on the workstation, tested on a Windows machine reached
+over SSH (see `windows/README.md`).
 
-The app's VM workspace defaults to `~/Library/Application Support/Try FydeOS/VM/v1`;
-point it elsewhere with `defaults write io.fydeos.tryfydeos workspace <dir>` or
-`TRY_FYDEOS_WORKSPACE=<dir>`. Forward host ports on 127.0.0.1 to the guest with
-`defaults write io.fydeos.tryfydeos forwards "2200:22"` or `TRY_FYDEOS_FORWARDS=2200:22`
-(comma-separated `HOSTPORT:GUESTPORT`). App log: `~/Library/Logs/Try FydeOS/TryFydeOS.log`.
+```sh
+make win-runtime    # fetch and verify the pinned Windows runtime into out/win-runtime/
+make win-test       # go vet + go test (OS-independent parts, fake QEMU)
+make win-build      # out/win-build/tryfydeos.exe and "Try FydeOS.exe"
+make win-image      # compress the amd64 raw image into factory/
+make win-sync       # copy the build to the test machine
+```
+
+## Image and VM data
+
+Both apps carry the FydeOS image zstd-compressed. Preparing a VM unpacks it
+into the workspace, checks the raw size and grows the file, sparse, to the
+64 GiB `diskBytes` of the board's spec. `TRY_FYDEOS_FACTORY_IMAGE` points
+at another `.zst`. Factory reset deletes the disk; the next launch unpacks
+again.
+
+| | macOS | Windows |
+|---|---|---|
+| VM workspace | `~/Library/Application Support/Try FydeOS/VM/v1` | `%LOCALAPPDATA%\Try FydeOS\VM\v1` |
+| Override | `defaults write io.fydeos.tryfydeos workspace <dir>` or `TRY_FYDEOS_WORKSPACE` | `preferences.json` `workspace` or `TRY_FYDEOS_WORKSPACE` |
+| Port forwards | `defaults write io.fydeos.tryfydeos forwards "2200:22"` or `TRY_FYDEOS_FORWARDS` | `preferences.json` `forwards` or `TRY_FYDEOS_FORWARDS` |
+| App log | `~/Library/Logs/Try FydeOS/TryFydeOS.log` | `%LOCALAPPDATA%\Try FydeOS\Logs\TryFydeOS.log` |
+
+Forwards are comma-separated `HOSTPORT:GUESTPORT` pairs on 127.0.0.1.

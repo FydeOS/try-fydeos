@@ -117,3 +117,29 @@ Gatekeeper's first-launch scan took 47 s for a 7.5 GB bundle against
 Rejected: the raw image beside the app in the DMG plus an import into an
 Application Support store (milestone 4). It needed an Install step, a 7.5 GB
 copy or clone and a 13 s verification before the first boot.
+
+## D10. One repository for every platform (2026-10-27)
+
+Wei's call. The macOS and Windows launchers share the guest contract, the
+factory specs, the decisions log and the QEMU findings, so they live in one
+tree under `macos/` and `windows/`, with a Linux port expected to join as
+`linux/`. Try Omarchy keeps separate repos per platform; we tag releases
+per platform instead. Reopen if the platforms diverge in release cadence
+or ownership.
+
+## D11. Windows: Try Omarchy's published runtime first, own build later (2026-10-27)
+
+Start on `winq-emu-alpha10-portable.zip` (release `runtime-v1-r25`, pinned
+by sha256 in `windows/runtime.lock.json`); it booted the stock image with
+GPU, input, audio and network on the first attempt. Our own cross-build on
+the workstation (QEMU's Fedora mingw recipe in Docker) comes once branding,
+window-close routing and HiDPI density need runtime patches. See
+`windows/design.md`.
+
+## D12. Windows: image bundled, unsigned portable zip, UEFI only (2026-10-27)
+
+The amd64 image ships inside the zip like the DMG (no raw image is
+published for download yet; an online download is a later split). No
+code-signing certificate exists, so testers click through SmartScreen.
+The guest boots through UEFI only; the image's legacy syslinux path is
+unsupported by FydeOS. Full screen defaults to on for parity with the Mac.
