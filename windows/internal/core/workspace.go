@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
+
+	"tryfydeos.io/windows/internal/payload"
 )
 
 type Metadata struct {
@@ -168,8 +170,9 @@ func (w *Workspace) LoadMetadata() (*Metadata, error) {
 }
 
 // Prepare unpacks the zstd factory image into a sparse disk of spec.DiskBytes
-// and copies the vars template. Idempotent: a prepared workspace is left alone.
-func (w *Workspace) Prepare(lock *StorageLock, spec *FactorySpec, image, varsTemplate string,
+// and copies the vars template. Idempotent: a prepared workspace is left alone
+// and image may be nil.
+func (w *Workspace) Prepare(lock *StorageLock, spec *FactorySpec, image *ImageSource, varsTemplate string,
 	progress func(written, total int64)) (*Metadata, error) {
 	if lock == nil || lock.Path != w.LockFile() {
 		return nil, errors.New("prepare needs the workspace lock")
@@ -180,6 +183,9 @@ func (w *Workspace) Prepare(lock *StorageLock, spec *FactorySpec, image, varsTem
 			return nil, fmt.Errorf("refusing to use %s: metadata.json is unreadable (%v); inspect it or run 'tryfydeos reset --yes'", w.Dir, err)
 		}
 		return m, nil
+	}
+	if image == nil {
+		return nil, errors.New("prepare needs the factory image")
 	}
 	for _, p := range []string{w.MetadataFile(), w.Disk(), w.EFIVars(), w.stagingDisk()} {
 		os.Remove(p)
@@ -193,7 +199,8 @@ func (w *Workspace) Prepare(lock *StorageLock, spec *FactorySpec, image, varsTem
 	if err := copyFile(varsTemplate, w.EFIVars()); err != nil {
 		return nil, err
 	}
-	if err := unpackSparse(image, w.stagingDisk(), raw, progress); err != nil {
+	in := payload.NewVerifier(image, image.Name, spec.Image.Bytes, spec.Image.SHA256)
+	if err := unpackSparse(in, image.Name, w.stagingDisk(), raw, progress); err != nil {
 		os.Remove(w.stagingDisk())
 		return nil, err
 	}
@@ -220,13 +227,9 @@ const unpackBlock = 1 << 20
 
 // unpackSparse decompresses into a file marked sparse and seeks over all-zero
 // blocks, so the disk occupies only its data. The decoder checks the frame
-// checksums; the size check catches a truncated or foreign image.
-func unpackSparse(image, output string, rawBytes int64, progress func(int64, int64)) error {
-	in, err := os.Open(image)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
+// checksums; the size check catches a truncated or foreign image. in is read
+// to its end so that a verifying reader gets to report a mismatch.
+func unpackSparse(in io.Reader, image, output string, rawBytes int64, progress func(int64, int64)) error {
 	dec, err := zstd.NewReader(in, zstd.WithDecoderConcurrency(1))
 	if err != nil {
 		return err
@@ -270,6 +273,9 @@ func unpackSparse(image, output string, rawBytes int64, progress func(int64, int
 	}
 	if off != rawBytes {
 		return fmt.Errorf("%s unpacked to %d bytes, spec says %d", image, off, rawBytes)
+	}
+	if _, err := io.Copy(io.Discard, in); err != nil {
+		return err
 	}
 	if err := out.Truncate(off); err != nil {
 		return err

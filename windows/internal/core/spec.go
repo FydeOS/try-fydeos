@@ -46,6 +46,10 @@ func LoadFactorySpec(path string) (*FactorySpec, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseFactorySpec(data, path)
+}
+
+func parseFactorySpec(data []byte, path string) (*FactorySpec, error) {
 	var spec FactorySpec
 	if err := json.Unmarshal(data, &spec); err != nil {
 		return nil, fmt.Errorf("factory spec %s: %w", path, err)

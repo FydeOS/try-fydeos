@@ -256,7 +256,7 @@ func TestPreferencesFile(t *testing.T) {
 	}
 	loc, err := core.DiscoverLocations(func(k string) string {
 		return map[string]string{"LOCALAPPDATA": filepath.Dir(filepath.Dir(path))}[k]
-	}, "/app")
+	}, "/app", nil)
 	if err != nil || loc.Workspace != `D:\vm` || len(loc.Forwards) != 1 {
 		t.Fatalf("core reads the shared file: %+v %v", loc, err)
 	}

@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"tryfydeos.io/windows/internal/payload"
 )
 
 // QEMUNames in order of preference: the GUI-subsystem build opens no console window.
@@ -19,12 +22,15 @@ type Preferences struct {
 }
 
 type Locations struct {
-	AppData              string
-	Runtime              string
+	AppData string
+	Runtime string
+	// Spec is empty when the spec comes from the payload.
 	Spec                 string
 	FactoryImageOverride string
 	Workspace            string
 	Forwards             []HostForward
+	// Payload is the data appended to a packaged exe, nil in a development build.
+	Payload *payload.Payload
 }
 
 func (l *Locations) LogsDir() string         { return filepath.Join(l.AppData, "Logs") }
@@ -52,6 +58,71 @@ func (l *Locations) FactoryImageCandidates(spec *FactorySpec) []string {
 	return append(c, filepath.Join(filepath.Dir(l.Spec), spec.Image.File))
 }
 
+// PayloadRuntime is where the payload's runtime.zip is extracted: one directory
+// per archive hash, so a newer exe brings its own runtime.
+func (l *Locations) PayloadRuntime() string {
+	if l.Payload == nil {
+		return ""
+	}
+	e, _ := l.Payload.Lookup(payload.RuntimeEntry)
+	return filepath.Join(l.AppData, "runtime", e.SHA256[:12])
+}
+
+func (l *Locations) RuntimeFromPayload() bool {
+	return l.Payload != nil && l.Runtime == l.PayloadRuntime()
+}
+
+func (l *Locations) LoadSpec() (*FactorySpec, error) {
+	if l.Spec != "" {
+		return LoadFactorySpec(l.Spec)
+	}
+	data, err := l.Payload.ReadAll(payload.SpecEntry)
+	if err != nil {
+		return nil, err
+	}
+	return parseFactorySpec(data, l.Payload.Path+":"+payload.SpecEntry)
+}
+
+// SpecName names the spec for messages.
+func (l *Locations) SpecName() string {
+	if l.Spec != "" {
+		return l.Spec
+	}
+	return l.Payload.Path + ":" + payload.SpecEntry
+}
+
+// ImageSource is the compressed factory image: a file or a payload entry.
+type ImageSource struct {
+	Name string
+	Size int64
+	io.ReadCloser
+}
+
+// OpenFactoryImage: TRY_FYDEOS_FACTORY_IMAGE, then the payload, then the file next to the spec.
+func (l *Locations) OpenFactoryImage(spec *FactorySpec) (*ImageSource, error) {
+	if l.Payload != nil && l.FactoryImageOverride == "" {
+		r, e, err := l.Payload.Entry(payload.ImageEntry)
+		if err != nil {
+			return nil, err
+		}
+		return &ImageSource{Name: l.Payload.Path + ":" + payload.ImageEntry, Size: e.Length, ReadCloser: io.NopCloser(r)}, nil
+	}
+	path, err := l.FactoryImage(spec)
+	if err != nil {
+		return nil, err
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	st, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+	return &ImageSource{Name: path, Size: st.Size(), ReadCloser: f}, nil
+}
+
 func (l *Locations) FactoryImage(spec *FactorySpec) (string, error) {
 	candidates := l.FactoryImageCandidates(spec)
 	for _, p := range candidates {
@@ -62,10 +133,11 @@ func (l *Locations) FactoryImage(spec *FactorySpec) (string, error) {
 	return "", fmt.Errorf("FydeOS image %s not found (looked at: %s)", spec.Image.File, strings.Join(candidates, ", "))
 }
 
-// DiscoverLocations resolves defaults next to the executable and under
-// %LOCALAPPDATA%\Try FydeOS; preferences.json and then TRY_FYDEOS_* override them
-// (TRY_FYDEOS_SPEC wins over the spec next to TRY_FYDEOS_FACTORY_IMAGE).
-func DiscoverLocations(getenv func(string) string, exeDir string) (*Locations, error) {
+// DiscoverLocations resolves defaults next to the executable (development
+// build) or from the exe's payload p, and under %LOCALAPPDATA%\Try FydeOS;
+// preferences.json and then TRY_FYDEOS_* override them (TRY_FYDEOS_SPEC wins
+// over the spec next to TRY_FYDEOS_FACTORY_IMAGE).
+func DiscoverLocations(getenv func(string) string, exeDir string, p *payload.Payload) (*Locations, error) {
 	local := getenv("LOCALAPPDATA")
 	if local == "" {
 		return nil, errors.New("LOCALAPPDATA is not set")
@@ -76,6 +148,14 @@ func DiscoverLocations(getenv func(string) string, exeDir string) (*Locations, e
 		Spec:    filepath.Join(exeDir, "factory", SpecFileName),
 	}
 	l.Workspace = filepath.Join(l.AppData, "VM", "v1")
+	if p != nil {
+		if _, ok := p.Lookup(payload.RuntimeEntry); !ok {
+			return nil, fmt.Errorf("%s: payload has no %s", p.Path, payload.RuntimeEntry)
+		}
+		l.Payload = p
+		l.Runtime = l.PayloadRuntime()
+		l.Spec = ""
+	}
 
 	var prefs Preferences
 	data, err := os.ReadFile(l.PreferencesFile())

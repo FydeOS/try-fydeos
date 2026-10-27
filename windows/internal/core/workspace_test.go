@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,13 +28,45 @@ func testImage(t *testing.T) (string, *FactorySpec, []byte) {
 	f.Close()
 	sum := sha256.Sum256(raw)
 	st, _ := os.Stat(image)
+	zst, _ := SHA256File(image)
 	spec := &FactorySpec{Schema: 1, DiskBytes: 64 << 20, Board: "test", Image: FactoryImage{
-		File: "image.bin.zst", Bytes: st.Size(), SHA256: hex.EncodeToString(sum[:]),
+		File: "image.bin.zst", Bytes: st.Size(), SHA256: zst,
 		RawBytes: int64(len(raw)), RawSHA256: hex.EncodeToString(sum[:]), Version: "test 1",
 	}}
 	vars := filepath.Join(dir, "vars.fd")
 	os.WriteFile(vars, []byte("vars"), 0o600)
 	return image, spec, raw
+}
+
+func openImage(t *testing.T, path string) *ImageSource {
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.Close() })
+	st, _ := f.Stat()
+	return &ImageSource{Name: path, Size: st.Size(), ReadCloser: f}
+}
+
+func TestPrepareRejectsImageHashMismatch(t *testing.T) {
+	image, spec, _ := testImage(t)
+	vars := filepath.Join(filepath.Dir(image), "vars.fd")
+	spec.Image.SHA256 = strings.Repeat("0", 64)
+	ws := &Workspace{Dir: t.TempDir()}
+	lock, err := ws.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+	if _, err := ws.Prepare(lock, spec, openImage(t, image), vars, nil); err == nil || !strings.Contains(err.Error(), "sha256") {
+		t.Fatalf("prepare with a wrong image hash: %v", err)
+	}
+	if ws.IsPrepared() {
+		t.Fatal("prepared despite the hash mismatch")
+	}
+	if _, err := os.Stat(ws.stagingDisk()); err == nil {
+		t.Fatal("staging disk left behind")
+	}
 }
 
 func TestPrepareUnpacksSparseAndIsIdempotent(t *testing.T) {
@@ -46,7 +79,7 @@ func TestPrepareUnpacksSparseAndIsIdempotent(t *testing.T) {
 	}
 	defer lock.Release()
 	var calls int
-	m, err := ws.Prepare(lock, spec, image, vars, func(w, total int64) { calls++ })
+	m, err := ws.Prepare(lock, spec, openImage(t, image), vars, func(w, total int64) { calls++ })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +101,7 @@ func TestPrepareUnpacksSparseAndIsIdempotent(t *testing.T) {
 		t.Fatalf("disk not sparse: %d bytes allocated", allocated)
 	}
 	before, _ := os.ReadFile(ws.MetadataFile())
-	m2, err := ws.Prepare(lock, spec, "/nonexistent", "/nonexistent", nil)
+	m2, err := ws.Prepare(lock, spec, nil, "/nonexistent", nil)
 	after, _ := os.ReadFile(ws.MetadataFile())
 	if err != nil || m2.MAC != m.MAC || !bytes.Equal(before, after) {
 		t.Fatalf("second prepare changed something: %v", err)
@@ -96,7 +129,7 @@ func TestPrepareRejectsWrongSize(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ws.Prepare(lock, &s, image, vars, nil); err == nil {
+		if _, err := ws.Prepare(lock, &s, openImage(t, image), vars, nil); err == nil {
 			t.Errorf("delta %d: accepted", delta)
 		}
 		if _, err := os.Stat(ws.Disk()); err == nil {

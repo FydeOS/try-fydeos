@@ -40,6 +40,7 @@ help:
 	@echo "make win-test   run the Go unit tests of windows/ on this host"
 	@echo "make win-sync   copy both exes, spec and sources to the NUC ($(NUC_DIR))"
 	@echo "make win-image  compress the amd64 raw image for factory/ (WIN_RAW=... WIN_ZST=...)"
+	@echo "make win-dist   pack dist/Try FydeOS-<version>.exe: GUI exe + runtime, image and spec payload"
 
 sync:
 	@test "$$(uname -s)" != Darwin || { echo "make sync: run this on the workstation" >&2; exit 1; }
@@ -109,8 +110,12 @@ NUC_PORT ?= 2223
 NUC_DIR ?= D:/try-fydeos/dev
 WIN_RAW ?= out/amd64/chromiumos_image-R150-16700.56.0-d2026_10_27_112641-a1.bin
 WIN_ZST ?= factory/fydeos-amd64-vmware-io-R150-16700.56.0-d20261027.bin.zst
+WIN_SPEC ?= factory/amd64-vmware-io.json
+# windows/versioninfo.rc is the version's source of truth.
+WIN_VERSION = $(shell sed -n 's/.*"ProductVersion", "\(.*\)".*/\1/p' windows/versioninfo.rc)
+WIN_DIST = dist/Try FydeOS-$(WIN_VERSION).exe
 
-.PHONY: win-runtime win-build win-rsrc win-test win-sync win-image
+.PHONY: win-runtime win-build win-rsrc win-test win-sync win-image win-dist
 
 win-runtime:
 	windows/scripts/fetch-runtime.sh
@@ -135,3 +140,9 @@ win-image:
 	zstd -T32 -19 -f "$(WIN_RAW)" -o "$(WIN_ZST)"
 	@echo "rawBytes $$(stat -c %s "$(WIN_RAW)") rawSha256 $$(sha256sum "$(WIN_RAW)" | cut -d' ' -f1)"
 	@echo "bytes $$(stat -c %s "$(WIN_ZST)") sha256 $$(sha256sum "$(WIN_ZST)" | cut -d' ' -f1)"
+
+win-dist: win-build
+	@test -n "$(WIN_VERSION)" || { echo "win-dist: no ProductVersion in windows/versioninfo.rc" >&2; exit 1; }
+	cd windows && go run ./cmd/tryfydeos-pack --exe "../out/win-build/Try FydeOS.exe" --runtime ../out/win-runtime \
+		--image "../$(dir $(WIN_SPEC))$$($(PYTHON) -c 'import json,sys; print(json.load(open(sys.argv[1]))["image"]["file"])' ../$(WIN_SPEC))" \
+		--spec ../$(WIN_SPEC) --out "../$(WIN_DIST)"

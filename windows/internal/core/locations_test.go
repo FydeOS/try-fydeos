@@ -11,7 +11,7 @@ func TestDiscoverLocations(t *testing.T) {
 	local := t.TempDir()
 	env := map[string]string{"LOCALAPPDATA": local}
 	getenv := func(k string) string { return env[k] }
-	l, err := DiscoverLocations(getenv, "/app")
+	l, err := DiscoverLocations(getenv, "/app", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +22,7 @@ func TestDiscoverLocations(t *testing.T) {
 
 	os.MkdirAll(l.AppData, 0o700)
 	os.WriteFile(l.PreferencesFile(), []byte(`{"forwards":["2201:22"],"workspace":"/prefs/vm"}`), 0o600)
-	l, err = DiscoverLocations(getenv, "/app")
+	l, err = DiscoverLocations(getenv, "/app", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func TestDiscoverLocations(t *testing.T) {
 	env["TRY_FYDEOS_FORWARDS"] = "2202:22, 8080:80"
 	env["TRY_FYDEOS_RUNTIME"] = "/env/runtime"
 	env["TRY_FYDEOS_FACTORY_IMAGE"] = "/images/x.bin.zst"
-	l, err = DiscoverLocations(getenv, "/app")
+	l, err = DiscoverLocations(getenv, "/app", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,12 +48,12 @@ func TestDiscoverLocations(t *testing.T) {
 	}
 
 	env["TRY_FYDEOS_SPEC"] = "/specs/s.json"
-	if l, err = DiscoverLocations(getenv, "/app"); err != nil || l.Spec != "/specs/s.json" {
+	if l, err = DiscoverLocations(getenv, "/app", nil); err != nil || l.Spec != "/specs/s.json" {
 		t.Fatalf("TRY_FYDEOS_SPEC %+v %v", l, err)
 	}
 
 	env["TRY_FYDEOS_FORWARDS"] = "nope"
-	if _, err := DiscoverLocations(getenv, "/app"); err == nil {
+	if _, err := DiscoverLocations(getenv, "/app", nil); err == nil {
 		t.Fatal("accepted a malformed forward")
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"tryfydeos.io/windows/internal/core"
+	"tryfydeos.io/windows/internal/payload"
 )
 
 type usageError string
@@ -31,7 +32,8 @@ const usage = `usage: tryfydeos <command> [options]
 vm options: --cpus N (4)  --memory-mib MiB (8192)  --full-screen  --cpu-fallback
             --forward HOSTPORT:GUESTPORT (repeatable, 127.0.0.1 only)
 all commands: --workspace DIR (default %LOCALAPPDATA%\Try FydeOS\VM\v1)
-              --runtime DIR (default runtime\ next to the exe)  --spec FILE`
+              --runtime DIR (default runtime\ next to the exe)  --spec FILE
+              --exe FILE (packaged "Try FydeOS.exe" whose payload supplies runtime, spec and image)`
 
 type options struct {
 	loc    *core.Locations
@@ -44,7 +46,20 @@ func parseOptions(args []string, allowed map[string]bool) (*options, error) {
 	if err != nil {
 		return nil, err
 	}
-	loc, err := core.DiscoverLocations(os.Getenv, filepath.Dir(exe))
+	for i, arg := range args {
+		if arg == "--exe" && i+1 < len(args) {
+			if exe, err = filepath.Abs(args[i+1]); err != nil {
+				return nil, err
+			}
+		}
+	}
+	p, err := payload.Open(exe)
+	if errors.Is(err, payload.ErrNoPayload) {
+		p = nil
+	} else if err != nil {
+		return nil, err
+	}
+	loc, err := core.DiscoverLocations(os.Getenv, filepath.Dir(exe), p)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +67,7 @@ func parseOptions(args []string, allowed map[string]bool) (*options, error) {
 	var forwards []core.HostForward
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
-		global := arg == "--workspace" || arg == "--runtime" || arg == "--spec"
+		global := arg == "--workspace" || arg == "--runtime" || arg == "--spec" || arg == "--exe"
 		if !allowed[arg] && !global {
 			return nil, usageError("unknown option " + arg)
 		}
@@ -88,6 +103,8 @@ func parseOptions(args []string, allowed map[string]bool) (*options, error) {
 			case "--spec":
 				o.loc.Spec = v
 			}
+		case "--exe":
+			_, err = value()
 		case "--cpus":
 			o.launch.CPUs, err = integer()
 		case "--memory-mib":
@@ -124,22 +141,9 @@ func say(message string) { fmt.Fprintf(os.Stderr, "tryfydeos: %s\n", message) }
 func report(state, what string) { fmt.Printf("%-8s %s\n", state, what) }
 
 func prepare(ws *core.Workspace, lock *core.StorageLock, loc *core.Locations) (*core.Metadata, error) {
-	spec, err := core.LoadFactorySpec(loc.Spec)
-	if err != nil {
-		return nil, err
-	}
-	var m *core.Metadata
-	if ws.IsPrepared() {
-		m, err = ws.Prepare(lock, spec, "", "", nil)
-	} else {
-		image, ferr := loc.FactoryImage(spec)
-		if ferr != nil {
-			return nil, ferr
-		}
-		m, err = ws.Prepare(lock, spec, image, loc.VarsTemplate(), func(written, total int64) {
-			say(fmt.Sprintf("unpacking the FydeOS image: %d%%", written*100/total))
-		})
-	}
+	m, spec, err := loc.PrepareWorkspace(ws, lock, say, func(written, total int64) {
+		say(fmt.Sprintf("unpacking the FydeOS image: %d%%", written*100/total))
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -173,25 +177,40 @@ func cmdDoctor(o *options) (int, error) {
 	report("info", fmt.Sprintf("host %d logical CPUs, %d MiB; VM range cpus %d...%d, memory %d...%d MiB",
 		host.LogicalCPUs, host.MemoryMiB, core.MinCPUs, host.LogicalCPUs, core.MinMemoryMiB, host.MemoryMiB-core.HostReserveMiB))
 	loc := o.loc
-	if out, err := exec.Command(loc.QEMU(), "-version").Output(); err == nil {
-		check(true, fmt.Sprintf("runtime %s: %s", loc.QEMU(), strings.SplitN(string(out), "\n", 2)[0]), false)
+	if p := loc.Payload; p != nil {
+		report("info", fmt.Sprintf("payload in %s at offset %d:", p.Path, p.Start))
+		for _, e := range p.Entries {
+			report("info", fmt.Sprintf("  %-12s %11d bytes  sha256 %s", e.Name, e.Length, e.SHA256))
+		}
 	} else {
-		_, statErr := os.Stat(loc.QEMU())
-		check(false, fmt.Sprintf("runtime %s: %v", loc.QEMU(), err), statErr != nil)
+		report("info", "no payload (development build): runtime, spec and image from files")
 	}
-	for _, f := range []string{loc.FirmwareCode(), loc.VarsTemplate()} {
-		_, err := os.Stat(f)
-		check(err == nil, "firmware "+f, err != nil)
+	if loc.RuntimeFromPayload() && !loc.RuntimeExtracted() {
+		report("info", fmt.Sprintf("runtime %s not extracted yet (the first launch or prepare extracts it)", loc.Runtime))
+	} else {
+		if loc.RuntimeFromPayload() {
+			report("info", "runtime extracted from the payload into "+loc.Runtime)
+		}
+		if out, err := exec.Command(loc.QEMU(), "-version").Output(); err == nil {
+			check(true, fmt.Sprintf("runtime %s: %s", loc.QEMU(), strings.SplitN(string(out), "\n", 2)[0]), false)
+		} else {
+			_, statErr := os.Stat(loc.QEMU())
+			check(false, fmt.Sprintf("runtime %s: %v", loc.QEMU(), err), statErr != nil)
+		}
+		for _, f := range []string{loc.FirmwareCode(), loc.VarsTemplate()} {
+			_, err := os.Stat(f)
+			check(err == nil, "firmware "+f, err != nil)
+		}
 	}
-	spec, err := core.LoadFactorySpec(loc.Spec)
+	spec, err := loc.LoadSpec()
 	if err != nil {
-		check(false, "factory spec "+loc.Spec+": "+err.Error(), errors.Is(err, os.ErrNotExist))
+		check(false, "factory spec "+loc.SpecName()+": "+err.Error(), errors.Is(err, os.ErrNotExist))
 	} else {
-		report("info", fmt.Sprintf("factory spec %s: %s %s %s", loc.Spec, spec.Image.File, spec.Image.Version, spec.Board))
+		report("info", fmt.Sprintf("factory spec %s: %s %s %s", loc.SpecName(), spec.Image.File, spec.Image.Version, spec.Board))
 		report("info", fmt.Sprintf("factory raw %d bytes, sha256 %s; VM disk %d bytes (sparse)", spec.Image.RawBytes, spec.Image.RawSHA256, spec.DiskBytes))
-		if image, err := loc.FactoryImage(spec); err == nil {
-			st, _ := os.Stat(image)
-			check(st.Size() == spec.Image.Bytes, fmt.Sprintf("factory image %s (%d bytes, spec says %d)", image, st.Size(), spec.Image.Bytes), false)
+		if image, err := loc.OpenFactoryImage(spec); err == nil {
+			image.Close()
+			check(image.Size == spec.Image.Bytes, fmt.Sprintf("factory image %s (%d bytes, spec says %d)", image.Name, image.Size, spec.Image.Bytes), false)
 		} else {
 			check(false, err.Error(), true)
 		}

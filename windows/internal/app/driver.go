@@ -94,27 +94,9 @@ func (d *CoreDriver) run(o core.LaunchOptions, deliver func(Event)) error {
 		return err
 	}
 	defer lock.Release()
-	spec, err := core.LoadFactorySpec(loc.Spec)
-	if err != nil {
-		return err
-	}
-	var m *core.Metadata
-	if ws.IsPrepared() {
-		m, err = ws.Prepare(lock, spec, "", "", nil)
-	} else {
-		image, ferr := loc.FactoryImage(spec)
-		if ferr != nil {
-			return ferr
-		}
-		d.Log.Write(fmt.Sprintf("unpacking %s into %s (%d bytes)", image, ws.Disk(), spec.Image.RawBytes))
-		start := time.Now()
-		m, err = ws.Prepare(lock, spec, image, loc.VarsTemplate(), func(written, total int64) {
-			deliver(Event{Kind: EventPreparing, Bytes: written, Total: total})
-		})
-		if err == nil {
-			d.Log.Write(fmt.Sprintf("unpacked in %.1f s", time.Since(start).Seconds()))
-		}
-	}
+	m, spec, err := loc.PrepareWorkspace(ws, lock, d.Log.Write, func(written, total int64) {
+		deliver(Event{Kind: EventPreparing, Bytes: written, Total: total})
+	})
 	if err != nil {
 		return err
 	}

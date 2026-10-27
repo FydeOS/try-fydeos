@@ -15,6 +15,7 @@ import (
 
 	"tryfydeos.io/windows/internal/app"
 	"tryfydeos.io/windows/internal/core"
+	"tryfydeos.io/windows/internal/payload"
 )
 
 // Keep in step with versioninfo.rc.
@@ -614,13 +615,19 @@ func main() {
 	if err != nil {
 		fatal(err.Error())
 	}
-	loc, err := core.DiscoverLocations(os.Getenv, filepath.Dir(exe))
+	p, err := payload.Open(exe)
+	if errors.Is(err, payload.ErrNoPayload) {
+		p = nil
+	} else if err != nil {
+		fatal(err.Error())
+	}
+	loc, err := core.DiscoverLocations(os.Getenv, filepath.Dir(exe), p)
 	if err != nil {
 		fatal(err.Error())
 	}
 	m := &startMenu{loc: loc, host: core.CurrentHost(), log: app.OpenAppLog(loc.LogsDir()), grey: map[uintptr]bool{}}
 	menu = m
-	m.log.Write(fmt.Sprintf("app started, version %s, workspace %s, runtime %s, spec %s", appVersion, loc.Workspace, loc.Runtime, loc.Spec))
+	m.log.Write(fmt.Sprintf("app started, version %s, workspace %s, runtime %s, spec %s", appVersion, loc.Workspace, loc.Runtime, loc.SpecName()))
 	if m.prefs, err = app.LoadPreferences(loc.PreferencesFile(), m.host); err != nil {
 		m.log.Write("preferences: " + err.Error() + "; using defaults")
 	}
