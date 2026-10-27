@@ -21,6 +21,7 @@ firmware/         edk2 UEFI pair pinned by SHA-256
 factory/          spec.json describing the pinned FydeOS factory image
 macos/            Swift package: TryFydeOSCore, tryfydeos CLI, TryFydeOSAppModel + the AppKit app;
                   Resources/ (Info.plist, entitlements, icon SVG), scripts/ (build-app.sh, package-dmg.sh, make-icon.sh)
+windows/          Go module for the Windows port (docs/windows.md): internal/core, tryfydeos CLI, runtime.lock.json
 docs/             design.md, decisions.md, carried-over-findings.md
 tests/            contract tests that run without a VM
 ```

@@ -34,6 +34,11 @@ help:
 	@echo "make run        boot the VM with defaults (Mac; WORKSPACE=dir RUN_ARGS='--cpus 6')"
 	@echo "make inspect    print the QEMU argv run would use (Mac)"
 	@echo "make test       run unit tests (Python, plus Swift on the Mac)"
+	@echo "make win-runtime fetch, verify and unpack the pinned Windows QEMU runtime into out/win-runtime/"
+	@echo "make win-build  cross-build tryfydeos.exe into out/win-build/"
+	@echo "make win-test   run the Go unit tests of windows/ on this host"
+	@echo "make win-sync   copy the Windows build, spec and sources to the NUC ($(NUC_DIR))"
+	@echo "make win-image  compress the amd64 raw image for factory/ (WIN_RAW=... WIN_ZST=...)"
 
 sync:
 	@test "$$(uname -s)" != Darwin || { echo "make sync: run this on the workstation" >&2; exit 1; }
@@ -97,3 +102,31 @@ inspect: app-build
 test:
 	$(PYTHON) -m unittest discover -s tests -v
 	@if [ "$$(uname -s)" = Darwin ]; then cd macos && swift test; fi
+
+NUC_HOST ?= wei@localhost
+NUC_PORT ?= 2223
+NUC_DIR ?= D:/try-fydeos/dev
+WIN_RAW ?= out/amd64/chromiumos_image-R150-16700.56.0-d2026_10_27_112641-a1.bin
+WIN_ZST ?= factory/fydeos-amd64-vmware-io-R150-16700.56.0-d20261027.bin.zst
+
+.PHONY: win-runtime win-build win-test win-sync win-image
+
+win-runtime:
+	windows/scripts/fetch-runtime.sh
+
+win-build:
+	mkdir -p out/win-build
+	cd windows && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o ../out/win-build/tryfydeos.exe ./cmd/tryfydeos
+
+win-test:
+	cd windows && go vet ./... && go test ./...
+
+win-sync: win-build
+	ssh -o BatchMode=yes -p $(NUC_PORT) $(NUC_HOST) 'New-Item -ItemType Directory -Force $(NUC_DIR) | Out-Null; if (Test-Path $(NUC_DIR)/src) { Remove-Item -Recurse -Force $(NUC_DIR)/src }'
+	scp -o BatchMode=yes -P $(NUC_PORT) out/win-build/*.exe factory/amd64-vmware-io.json $(NUC_HOST):$(NUC_DIR)/
+	scp -o BatchMode=yes -r -P $(NUC_PORT) windows $(NUC_HOST):$(NUC_DIR)/src
+
+win-image:
+	zstd -T32 -19 -f "$(WIN_RAW)" -o "$(WIN_ZST)"
+	@echo "rawBytes $$(stat -c %s "$(WIN_RAW)") rawSha256 $$(sha256sum "$(WIN_RAW)" | cut -d' ' -f1)"
+	@echo "bytes $$(stat -c %s "$(WIN_ZST)") sha256 $$(sha256sum "$(WIN_ZST)" | cut -d' ' -f1)"

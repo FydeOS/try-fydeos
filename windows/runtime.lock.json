@@ -1,0 +1,6 @@
+{
+  "name": "winq-emu-alpha10-portable.zip",
+  "url": "https://github.com/omacom/try-omarchy-windows/releases/download/runtime-v1-r25/winq-emu-alpha10-portable.zip",
+  "sha256": "ee4ee430f9b060552a2636197fe23598052559c946127ae293dfe447cd930f72",
+  "keep": ["bin", "LICENSES", "provenance", "README.txt"]
+}
