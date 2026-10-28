@@ -91,7 +91,18 @@ Overlay (`windows/runtime/overlay/`):
 - msvcrt UTF-8 paths: Fedora's toolchain targets msvcrt, not the UCRT, so
   Try Omarchy's UCRT-locale check runs on the UCRT only;
 - virglrenderer without Venus: Fedora's Vulkan headers are too old for the
-  fork's Venus, so Venus is off (no Vulkan consumer in the guest today).
+  fork's Venus, so Venus is off (no Vulkan consumer in the guest today);
+- window frame: the first window opens at 75 % of the display's usable
+  area, 16:9 and centered, the rule of Try Omarchy's Cocoa window, and the
+  EDID prefers that mode before the guest reads it, so FydeOS boots
+  straight into the frame. The window is then the master as on the Mac: a
+  guest mode change (the firmware's 1280x800) is scaled into it, the guest
+  follows the window. Dragging keeps the client area 16:9 (an edge sizes
+  the other axis, a corner follows the axis the pointer moved more),
+  maximize gives the largest 16:9 window in the work area, centered. Full
+  screen stays the whole display. Done with a window procedure in front of
+  SDL's: SDL2 ignores WM_SIZING, fills WM_GETMINMAXINFO itself and its
+  message hook only sees posted messages.
 
 Differences from Try Omarchy's MSYS2 build: msvcrt instead of UCRT, no
 Venus, no D3D11 video decode, no libusb, no `qemu-img.exe`. Two Fedora
@@ -295,19 +306,28 @@ in session 0).
    bar and taskbar; resize followed (EDID 340x170 mm for 1484x721 px at
    110 DPI); close button → prompt, Cancel keeps running, Shut down →
    POWERDOWN, second press 2 s later, `guest-shutdown` at 16 s, exit 0.
-   Open: the density at 125/150 % is unmeasured (needs a scaled display);
-   the first guest mode is still the default 1280x800 EDID until the user
-   resizes, which at 150 % gives a small window; the packaged exe with
-   this runtime is built (`out/win-dist-own/`) but not yet run on the NUC.
+   2026-10-28: density verified at 150 % (EDID 165 DPI, the FydeOS UI at
+   scale 1.5 in `out/nuc-m5/shot-07-150pct-boot.png`, a resize to
+   3578x1969 px reported as 550x300 mm). Window frame added the same day
+   at Wei's request (Mac parity, ratio kept while resizing): at 100 % on
+   1920x1080 the window opens at 1376x774 and the guest boots into that
+   mode with no later resize; real drags of corners and edges gave
+   1644x925, 1844x1037, 1886x1061, 1176x662 and 1444x812; maximize gave a
+   1780x1001 client area; full screen 1920x1080. The packaged exe with this
+   runtime booted into the same frame and shut down through the close
+   prompt (`out/nuc-m6/`).
 6. Later: image download (D-W2 split), shared folder, clipboard, port
    forwards UI.
 
 ## Known risks
 
-- HiDPI hosts: the density patch (milestone 5) is measured at 100 % only;
-  a 125/150 % check needs a scaled display. The first guest mode is the
-  default 1280x800 until a resize, so at 150 % the window starts small
-  (the launcher could pass `xres`/`yres` from the host like the Mac).
+- Window as master: the window no longer follows guest mode changes, so
+  a resolution picked inside FydeOS is scaled into the window, and SDL's
+  Ctrl-Alt-0 (window to guest size) does nothing in a framed window; a
+  full-screen start keeps SDL's behaviour. Windows lets a drag push the
+  window past the work area (the lock only fixes the ratio), and a
+  maximized window keeps its invisible resize borders inside the work
+  area, about 16 px narrower than a stock maximize.
 - Close button under grab: with the pointer captured by the guest, the X
   cannot be reached until Ctrl-Alt-G; the Mac has no grab.
 - Runtime drift: the shipped Fedora packages are pinned by version and the

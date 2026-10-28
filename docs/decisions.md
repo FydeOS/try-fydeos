@@ -153,7 +153,8 @@ Milestone 5 replaces Try Omarchy's zip with `make win-runtime-build`:
 QEMU's Fedora 43 mingw64 cross image in Docker, the same pinned QEMU and
 virglrenderer forks with all of Try Omarchy's patches, SDL2, libepoxy and
 libslirp from source, and our overlay (window title and icon, the close
-prompt feeding the shutdown ladder, EDID density from the Windows scale).
+prompt feeding the shutdown ladder, EDID density from the Windows scale,
+the Mac's 75 % 16:9 first frame with the ratio kept while resizing).
 Every input is pinned by hash in `windows/runtime/lock.json`; the build
 runs offline and is reproducible. Try Omarchy's zip stays pinned as a
 fallback (`WIN_RUNTIME=omarchy`).
