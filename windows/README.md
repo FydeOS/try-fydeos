@@ -222,8 +222,9 @@ the top level and ours under `own`; `make win-dist` packs whatever is in
 `README.txt` ("Try FydeOS runtime for Windows, lock.json sha256 …" or
 "WINQ-EMU runtime for Try Omarchy").
 
-Sizes (lock a1112ddfcb0f): zip 41 MB, 116 MB unpacked (QEMU 82 MB unstripped,
-as in Try Omarchy's zip), runtime.zip in the packaged exe 43.5 MB.
+Sizes (lock 4aa76191872f): zip 41 MB (42,287,837 bytes), 116 MB unpacked
+(QEMU 82 MB unstripped, as in Try Omarchy's zip), runtime.zip in the
+packaged exe 43.5 MB.
 
 Stack: QEMU 11.0.0 (cmspam/winq-emu-qemu `2ce303cf` + Try Omarchy's 0001-0024),
 virglrenderer 1.3.0 (cmspam/winq-emu-virglrenderer `e80354b8` + 0001-0005),
@@ -253,6 +254,18 @@ Overlay (`windows/runtime/overlay/`, applied after the Try Omarchy patches):
 - `qemu-msvcrt-utf8-paths.patch`: Try Omarchy's 0009 aborts unless the
   UCRT accepts a UTF-8 locale; Fedora's toolchain targets msvcrt, which
   needs no locale for UTF-8 paths (checked with a non-ASCII disk path).
+- `qemu-sdl-window-frame.patch`: the window opens with the rule of Try
+  Omarchy's Cocoa window: unit = floor(min(usable width * 0.75 / 16,
+  usable height * 0.75 / 9)), a 16 x 9 unit client area centered in the
+  display's usable bounds, sent to the guest at once, so the EDID prefers
+  that mode from the start. From then on the window keeps its size (the
+  firmware's 1280x800 is scaled into it, pillarboxed) and the guest follows
+  the window. Dragging the frame keeps 16:9 (an edge sizes the other axis,
+  a corner follows the axis the pointer moved more), maximize gives the
+  largest 16:9 window inside the work area, centered. A window procedure in
+  front of SDL's does this: SDL2 has no WM_SIZING handling, fills
+  WM_GETMINMAXINFO itself, and its message hook only sees queued messages.
+  Full screen and programmatic resizes are not constrained.
 - `virglrenderer-without-venus.patch`: the fork only links with Venus;
   Fedora's Vulkan headers are too old for it, so Venus is off.
 
@@ -265,7 +278,8 @@ the environment of `tryfydeos run` (or the app); `qemu-stderr.log` in the
 run directory then logs `edid-density: window created: console 0, 165 DPI`
 at 150 %, and on every resize `edid-density: resized: …, W x H px, w x h mm`.
 In the guest, Chrome logs the chosen scale (`device_scale_factor:1.5`) in
-`/var/log/chrome/chrome`.
+`/var/log/chrome/chrome`. The window frame logs
+`edid-density: initial frame: console 0, … px, … mm` once.
 
 Verified on the NUC (2026-10-27, monitor at 100 %): `--version` 11.0.0,
 `-accel help` lists whpx, `-display help` lists sdl, `virtio-vga-gl`
@@ -275,3 +289,17 @@ Product "Try FydeOS"; resize followed by the guest (EDID 340x170 mm for
 1484x721 px); close button → prompt, Cancel keeps running, Shut down →
 `guest-shutdown` 16 s later, launcher exit 0; `tryfydeos shutdown` still
 runs the two-press ladder.
+
+Window frame on the NUC (2026-10-28, display at 100 %, LogPixels unset,
+1920x1080, work area 1920x1040, so unit 86): the window opens at client
+1376x774 at 272,133 (margins 272/272/133/133) and keeps that size through
+the boot (sampled every 500 ms: firmware pillarboxed, no resize), EDID
+`initial frame: 1376x774 px, 320x180 mm` at 110 DPI, OOBE in 1376x774;
+real frame drags keep 16:9 within 0.5 px and the EDID follows (corner
++300/+40 → 1644x925, left edge → 1844x1037, top edge → 1886x1061, corner
+-200/-20 → 1176x662, corner +30/+150 → 1444x812); maximize → client
+1780x1001 in a 1796x1040 window, centered horizontally, restore back to
+1444x812; `--full-screen` → 1920x1080 for the guest, no frame logic; the
+close prompt and `tryfydeos shutdown` still end with `guest-shutdown`,
+exit 0; the packaged exe extracts runtime 37b8aebc677e (lock 4aa76191872f)
+and opens the same 1376x774 window.

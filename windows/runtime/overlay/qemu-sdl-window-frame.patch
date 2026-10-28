@@ -1,0 +1,232 @@
+From: Try FydeOS contributors
+Subject: [PATCH] sdl: open a centered 16:9 window and keep 16:9 on resize
+
+Applies after qemu-msvcrt-utf8-paths.patch.
+
+The first window (console 0; sdl2_gl_console_init's hidden probe window
+does not count) opens at the rule of Try Omarchy's Cocoa window: unit =
+floor(min(usable width * 0.75 / 16, usable height * 0.75 / 9)), a client
+area of 16 x 9 units centered in the usable bounds of its display, in
+pixels. The frame goes to the guest at once (no one second debounce), so
+virtio-gpu's EDID prefers that mode from the start and the guest comes up
+in it. From then on the window keeps its size as on the Mac: a guest mode
+change (the firmware's 1280x800) is scaled into the window instead of
+resizing it; the guest follows the window. A full screen start keeps the
+whole display and the old behaviour.
+
+The user keeps 16:9: dragging an edge sizes the other axis, a corner
+follows the axis the pointer moved more since the drag began, and maximize
+gives the largest 16:9 window inside the work area, centered. SDL2 does
+not handle WM_SIZING and fills WM_GETMINMAXINFO itself, and its message
+hook only sees queued messages, so a window procedure in front of SDL's
+does it. Programmatic resizes and full screen (no sizing frame) are not
+constrained.
+
+diff --git a/ui/sdl2.c b/ui/sdl2.c
+index 9c504c3..6c1e760 100644
+--- a/ui/sdl2.c
++++ b/ui/sdl2.c
+@@ -130,7 +130,7 @@ static void sdl2_edid_debug(const char *what, struct sdl2_console *scon,
+ #endif
+ 
+ static void sdl2_send_ui_info(struct sdl2_console *scon, int width, int height,
+-                              const char *why)
++                              const char *why, bool delay)
+ {
+     QemuUIInfo info;
+ 
+@@ -144,7 +144,7 @@ static void sdl2_send_ui_info(struct sdl2_console *scon, int width, int height,
+     info.height_mm = qemu_edid_density_mm(scon->edid_dpi, height);
+     sdl2_edid_debug(why, scon, &info);
+ #endif
+-    dpy_set_ui_info(scon->dcl.con, &info, true);
++    dpy_set_ui_info(scon->dcl.con, &info, delay);
+ }
+ 
+ #ifdef _WIN32
+@@ -171,6 +171,141 @@ static void sdl2_set_resource_icon(SDL_Window *window)
+         SendMessageW(wm.info.win.window, WM_SETICON, ICON_SMALL, (LPARAM)small);
+     }
+ }
++
++/*
++ * The first window opens at 75 % of the display's usable area, 16:9 and
++ * centered, as Try Omarchy's Cocoa window does; the user keeps 16:9 when
++ * dragging its frame or maximizing it. Full screen is left alone.
++ */
++static bool sdl2_frame_done;
++static bool sdl2_framed;
++static WNDPROC sdl2_frame_next;
++static RECT sdl2_frame_drag_start;
++
++/* The frame around a client area of w x h pixels at the window's DPI. */
++static RECT sdl2_frame_outer(HWND hwnd, LONG w, LONG h)
++{
++    static BOOL (WINAPI *adjust_for_dpi)(RECT *, DWORD, BOOL, DWORD, UINT);
++    static UINT (WINAPI *dpi_for_window)(HWND);
++    HMODULE user32 = GetModuleHandleW(L"user32.dll");
++    DWORD style = GetWindowLongW(hwnd, GWL_STYLE);
++    DWORD ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
++    RECT r = { 0, 0, w, h };
++
++    if (!adjust_for_dpi) {
++        adjust_for_dpi = (void *)GetProcAddress(user32, "AdjustWindowRectExForDpi");
++        dpi_for_window = (void *)GetProcAddress(user32, "GetDpiForWindow");
++    }
++    if (adjust_for_dpi && dpi_for_window) {
++        adjust_for_dpi(&r, style, FALSE, ex_style, dpi_for_window(hwnd));
++    } else {
++        AdjustWindowRectEx(&r, style, FALSE, ex_style);
++    }
++    return r;
++}
++
++/*
++ * A corner follows the axis the pointer moved more since the drag began;
++ * the opposite edges stay.
++ */
++static void sdl2_frame_sizing(HWND hwnd, WPARAM edge, RECT *r)
++{
++    RECT f = sdl2_frame_outer(hwnd, 0, 0);
++    LONG fw = f.right - f.left, fh = f.bottom - f.top;
++    LONG w = r->right - r->left - fw, h = r->bottom - r->top - fh;
++    bool by_width = edge == WMSZ_LEFT || edge == WMSZ_RIGHT;
++
++    if (edge != WMSZ_LEFT && edge != WMSZ_RIGHT &&
++        edge != WMSZ_TOP && edge != WMSZ_BOTTOM) {
++        by_width = labs(w - sdl2_frame_drag_start.right) * 9 >=
++                   labs(h - sdl2_frame_drag_start.bottom) * 16;
++    }
++    if (by_width) {
++        h = (w * 9 + 8) / 16;
++    } else {
++        w = (h * 16 + 4) / 9;
++    }
++    if (edge == WMSZ_TOP || edge == WMSZ_TOPLEFT || edge == WMSZ_TOPRIGHT) {
++        r->top = r->bottom - h - fh;
++    } else {
++        r->bottom = r->top + h + fh;
++    }
++    if (edge == WMSZ_LEFT || edge == WMSZ_TOPLEFT || edge == WMSZ_BOTTOMLEFT) {
++        r->left = r->right - w - fw;
++    } else {
++        r->right = r->left + w + fw;
++    }
++}
++
++/* The largest 16:9 window inside the work area, centered. */
++static void sdl2_frame_maximized(HWND hwnd, MINMAXINFO *mmi)
++{
++    MONITORINFO mi = { .cbSize = sizeof(mi) };
++    RECT f = sdl2_frame_outer(hwnd, 0, 0);
++    LONG fw = f.right - f.left, fh = f.bottom - f.top;
++    LONG aw, ah, w, h;
++
++    if (!GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mi)) {
++        return;
++    }
++    aw = mi.rcWork.right - mi.rcWork.left - fw;
++    ah = mi.rcWork.bottom - mi.rcWork.top - fh;
++    h = MIN(ah, aw * 9 / 16);
++    w = (h * 16 + 4) / 9;
++    mmi->ptMaxSize.x = w + fw;
++    mmi->ptMaxSize.y = h + fh;
++    mmi->ptMaxPosition.x = mi.rcWork.left - mi.rcMonitor.left + (aw - w) / 2;
++    mmi->ptMaxPosition.y = mi.rcWork.top - mi.rcMonitor.top + (ah - h) / 2;
++}
++
++/*
++ * A window procedure in front of SDL's: SDL2 does not handle WM_SIZING, and
++ * fills WM_GETMINMAXINFO itself, so the maximized size is set after it.
++ * Full screen windows have no sizing frame.
++ */
++static LRESULT CALLBACK sdl2_frame_wndproc(HWND hwnd, UINT msg, WPARAM wp,
++                                           LPARAM lp)
++{
++    bool framed = GetWindowLongW(hwnd, GWL_STYLE) & WS_THICKFRAME;
++    LRESULT ret;
++
++    if (msg == WM_ENTERSIZEMOVE) {
++        GetClientRect(hwnd, &sdl2_frame_drag_start);
++    }
++    if (msg == WM_SIZING && framed) {
++        sdl2_frame_sizing(hwnd, wp, (RECT *)lp);
++    }
++    ret = CallWindowProcW(sdl2_frame_next, hwnd, msg, wp, lp);
++    if (msg == WM_GETMINMAXINFO && framed) {
++        sdl2_frame_maximized(hwnd, (MINMAXINFO *)lp);
++    }
++    return ret;
++}
++
++static void sdl2_frame_init(struct sdl2_console *scon)
++{
++    SDL_SysWMinfo wm;
++    SDL_Rect r;
++    int unit;
++
++    SDL_VERSION(&wm.version);
++    if (!SDL_GetWindowWMInfo(scon->real_window, &wm)) {
++        return;
++    }
++    sdl2_frame_next = (WNDPROC)SetWindowLongPtrW(wm.info.win.window, GWLP_WNDPROC,
++                                                 (LONG_PTR)sdl2_frame_wndproc);
++    if ((SDL_GetWindowFlags(scon->real_window) & SDL_WINDOW_FULLSCREEN) ||
++        SDL_GetDisplayUsableBounds(SDL_GetWindowDisplayIndex(scon->real_window),
++                                   &r)) {
++        return;
++    }
++    unit = MIN(r.w * 3 / 64, r.h / 12);
++    SDL_SetWindowSize(scon->real_window, 16 * unit, 9 * unit);
++    SDL_SetWindowPosition(scon->real_window, r.x + (r.w - 16 * unit) / 2,
++                          r.y + (r.h - 9 * unit) / 2);
++    sdl2_framed = true;
++    sdl2_send_ui_info(scon, 16 * unit, 9 * unit, "initial frame", false);
++}
+ #endif
+ 
+ void sdl2_window_create(struct sdl2_console *scon)
+@@ -242,6 +377,11 @@ void sdl2_window_create(struct sdl2_console *scon)
+     scon->edid_dpi = sdl2_window_edid_dpi(scon->real_window);
+     qemu_edid_dpi = scon->edid_dpi;
+     sdl2_edid_debug("window created", scon, NULL);
++    /* Console 0's first visible window; sdl2_gl_console_init's is hidden. */
++    if (scon->idx == 0 && !scon->hidden && !sdl2_frame_done) {
++        sdl2_frame_done = true;
++        sdl2_frame_init(scon);
++    }
+ #endif
+ }
+ 
+@@ -271,6 +411,12 @@ void sdl2_window_resize(struct sdl2_console *scon)
+     if (!scon->real_window) {
+         return;
+     }
++#ifdef _WIN32
++    /* The framed window keeps its size; the guest follows it. */
++    if (sdl2_framed && scon->idx == 0) {
++        return;
++    }
++#endif
+ 
+     SDL_SetWindowSize(scon->real_window,
+                       surface_width(scon->surface),
+@@ -935,7 +1081,8 @@ static void handle_windowevent(SDL_Event *ev)
+ 
+     switch (ev->window.event) {
+     case SDL_WINDOWEVENT_RESIZED:
+-        sdl2_send_ui_info(scon, ev->window.data1, ev->window.data2, "resized");
++        sdl2_send_ui_info(scon, ev->window.data1, ev->window.data2, "resized",
++                          true);
+         sdl2_redraw(scon);
+         break;
+ #ifdef _WIN32
+@@ -946,7 +1093,7 @@ static void handle_windowevent(SDL_Event *ev)
+             int width, height;
+ 
+             SDL_GetWindowSize(scon->real_window, &width, &height);
+-            sdl2_send_ui_info(scon, width, height, "scale changed");
++            sdl2_send_ui_info(scon, width, height, "scale changed", true);
+         }
+         break;
+ #endif

@@ -152,6 +152,10 @@
       {
         "file": "overlay/qemu-msvcrt-utf8-paths.patch",
         "sha256": "0b0a3c9c19a3b48d0ee89b6f55e4ef1c4e82540cbeb7668943af794c1e99f942"
+      },
+      {
+        "file": "overlay/qemu-sdl-window-frame.patch",
+        "sha256": "6034e373d9a2b11de36ec0343f4d82572caea14131f4145076d06d1514b7afec"
       }
     ]
   },

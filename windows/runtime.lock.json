@@ -9,8 +9,8 @@
     "README.txt"
   ],
   "own": {
-    "name": "win-runtime-a1112ddfcb0f.zip",
-    "sha256": "edd0e6dc33afb6b8a879e63c5ad2b801e884a6d5755f7bc72f2a80bc099a0e87",
+    "name": "win-runtime-4aa76191872f.zip",
+    "sha256": "1e097ebb8af00df5de1c0962ab38556a8150ca3d18461337ac0881bccb1d2ec2",
     "keep": [
       "bin",
       "LICENSES",
