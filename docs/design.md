@@ -3,10 +3,10 @@
 Owner: Wei. The product-wide view; each platform has its own document with
 the full architecture, QEMU contract and milestones:
 
-| Platform | Host | Guest image | Document | Status (2026-10-27) |
+| Platform | Host | Guest image | Document | Status (2026-11-02) |
 |---|---|---|---|---|
-| macOS | Apple Silicon, macOS 15+ | `arm64-vmware-io` | `macos/design.md` | milestone 4 done: DMG published for internal testers |
-| Windows | x86-64, Windows 10/11 | `amd64-vmware-io` | `windows/design.md` | milestones 1–5 done: single exe published for internal testers, own runtime built |
+| macOS | Apple Silicon, macOS 15+ | `arm64-vmware-io` | `macos/design.md` | milestones 1–6 done: image downloaded at first launch, DMG for internal testers |
+| Windows | x86-64, Windows 10/11 | `amd64-vmware-io` | `windows/design.md` | milestones 1–6 done: image downloaded at first launch, single exe, own runtime |
 | Linux | x86-64, KVM | `amd64-vmware-io` | later | not started |
 
 Decisions are logged in `decisions.md`, one entry per decision, newest
@@ -28,10 +28,12 @@ fresh (D1).
   fixes land in the FydeOS overlays (`project-vmware` and the two
   `overlay-*-openfyde_vmware` BSPs), never in this repo.
 - **Factory image**: one spec per board in `factory/` (`spec.json` for
-  arm64, `amd64-vmware-io.json` for amd64), the image zstd-compressed and
-  never committed. Every new VM is unpacked from it into a sparse 64 GiB
-  disk; FydeOS grows its stateful partition into the free space on first
-  boot (D9).
+  arm64, `amd64-vmware-io.json` for amd64) pins the VMware image FydeOS
+  publishes for that board and names it in the release API. The launcher
+  downloads it at first launch, verifies it, decodes the VMDK inside into a
+  sparse 64 GiB disk and keeps the download for factory resets; FydeOS
+  grows its stateful partition into the free space on first boot (D14, D9).
+  No image is bundled or committed.
 - **QEMU contract**: virtio block, net, GPU with VirGL, keyboard and
   tablet, Intel HDA audio, a serial console log, QMP for lifecycle. The
   pointer is `virtio-tablet-pci`, which works because of guest kernel patch
@@ -42,8 +44,8 @@ fresh (D1).
   while the launcher supervises it: the same two-press shutdown ladder
   over QMP, pause on host sleep, per-run logs, a lock on the VM directory.
   The strings table is shared; only platform-specific lines differ.
-- **Packaging**: the runtime, firmware, launcher and compressed image ship
-  together (DMG on macOS, one exe with an appended payload on Windows).
+- **Packaging**: the runtime, firmware and launcher ship together (DMG on
+  macOS, one exe with an appended payload on Windows), 173 MB and 51 MB.
   No code signing certificate yet on either platform.
 
 ## Platform differences that matter
@@ -63,7 +65,7 @@ fresh (D1).
 ```
 Makefile      make targets for every platform (Mac targets run on the Mac, win-* on the workstation)
 docs/         design.md (this), decisions.md, macos/ and windows/ (per-platform design.md and records)
-factory/      one spec per board; the images stay outside git
+factory/      one spec per board pinning the published image; nothing else
 runtime/      macOS runtime build: lock.json, runtime.py, overlay patches (Windows: windows/runtime/)
 firmware/     edk2 pair for the macOS runtime
 macos/        Swift package: TryFydeOSCore, tryfydeos CLI, TryFydeOSAppModel, the AppKit app

@@ -97,6 +97,9 @@ free resize stays available until then.
 
 ## D9. Image bundled zstd-compressed, unpacked per VM, 64 GiB sparse disk (2026-10-19)
 
+Superseded by D14 on 2026-11-02 for the image source; the 64 GiB sparse
+disk and the per-VM preparation stay.
+
 The app carries the factory image as `Contents/Resources/factory/<file>.zst`
 (zstd -19). Preparing a VM runs the bundled `runtime/bin/zstd` into
 `.disk.img.preparing` in the workspace, checks the exact raw byte count,
@@ -138,6 +141,9 @@ window-close routing and HiDPI density need runtime patches. See
 
 ## D12. Windows: image bundled, unsigned portable zip, UEFI only (2026-10-27)
 
+The bundled image is superseded by D14 on 2026-11-02; the single exe,
+the missing certificate and UEFI-only boot stand.
+
 The amd64 image ships inside the app like the DMG (no raw image is
 published for download yet; an online download is a later split): one
 self-contained exe with the runtime and the image appended as a payload,
@@ -164,3 +170,35 @@ the UCRT (Fedora has no UCRT glib), no Venus (Fedora's Vulkan headers are
 older than the fork's protocol; no Vulkan consumer in the guest today), no
 D3D11 video decode, no libusb. Revisit Venus when a guest needs it or a
 UCRT toolchain becomes available in the image.
+
+## D14. The apps download FydeOS's published VMware image and convert it themselves (2026-11-02)
+
+Neither app carries an image any more. The factory spec (schema 2) pins
+the VMware download FydeOS publishes for the board by URL, size and
+SHA-256, and names the board in the release API
+(`release-api.fydeos.io/api/downloads`, the same list the fydeos.io
+download pages read). At first launch the launcher asks the API and takes
+its image when the checksum differs from the pinned one, else the pinned
+one; offline it uses what it has. The download is resumable, verified by
+hash and kept in the app's `images` directory, so a factory reset never
+downloads again. When the API lists a newer image than the one installed,
+the reset section says so and the reset installs it.
+
+The download is a VMware disk, not a raw image: an `.ova` with a
+streamOptimized VMDK for x86_64, a zip of a Fusion `.vmwarevm` folder with
+a monolithicSparse VMDK for arm64. Both launchers decode either layout
+themselves (`windows/internal/vmdk`, `TryFydeOSCore/VMDK.swift`), reading
+the member straight out of the container into the sparse disk, instead of
+shipping qemu-img. The published disk is `chromiumos_image.bin` followed
+by zeros to 50 GiB, so the launcher cuts it at the GPT's alternate header
+and refuses a disk with data beyond that; the result is byte-identical to
+qemu-img's conversion. Wei chose the in-launcher decoder over shipping
+qemu-img, and the API with the pinned image as fallback over scraping the
+download page or a new manifest.
+
+Measured: the Windows exe went from 1.65 GB to 51 MB, the Mac app from
+1.4 GB to 173 MB; the NUC downloaded 1.91 GB in 154 s and converted it in
+21.7 s, the M4 Mac 1.57 GB in 128 s and 5.4 s. The July 2026 amd64 OVA
+could not boot under Try FydeOS because its kernel lacked virtio; the
+v23.1 images carry the same drivers as our own builds, which is why this
+split became possible.
