@@ -54,6 +54,23 @@ public enum WorkspaceState: Equatable, Sendable {
     case foreign(String)
 }
 
+func freeBytes(_ url: URL) throws -> Int64 {
+    var fs = statfs()
+    guard statfs(url.path, &fs) == 0 else { throw WorkspaceError.system("statfs \(url.path)", errno) }
+    return Int64(fs.f_bavail) * Int64(fs.f_bsize)
+}
+
+/// Index of the last non-zero byte, nil for an all-zero buffer.
+func lastNonZero(_ data: UnsafeRawBufferPointer) -> Int? {
+    var i = data.count
+    while i >= 8, data.loadUnaligned(fromByteOffset: i - 8, as: UInt64.self) == 0 { i -= 8 }
+    while i > 0 {
+        if data[i - 1] != 0 { return i - 1 }
+        i -= 1
+    }
+    return nil
+}
+
 public func utcTimestamp(_ date: Date = Date()) -> String {
     ISO8601DateFormatter().string(from: date)
 }
@@ -74,10 +91,14 @@ public final class Workspace {
         self.url = url.standardizedFileURL
     }
 
-    public static var defaultURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/Try FydeOS/VM/v1")
+    public static var appSupportURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/Try FydeOS")
     }
+
+    public static var defaultURL: URL { appSupportURL.appendingPathComponent("VM/v1") }
+
+    /// Free space kept for converting the image and for the guest's first writes.
+    public var workReserve: Int64 = 10 << 30
 
     public var marker: URL { url.appendingPathComponent(Self.markerName) }
     public var lockFile: URL { url.appendingPathComponent(".lock") }
@@ -140,67 +161,84 @@ public final class Workspace {
         return try? JSONDecoder().decode(Metadata.self, from: data)
     }
 
-    /// Unpacks the zstd factory image into a sparse disk of `spec.diskBytes` and clones the vars
-    /// template. Idempotent: a prepared workspace is left alone.
-    public func prepare(lock: StorageLock, spec: FactorySpec, image: URL, zstd: URL, varsTemplate: URL,
-                        progress: (_ bytesWritten: Int64, _ totalBytes: Int64) -> Void = { _, _ in }) throws -> Metadata {
-        precondition(lock.path == lockFile.path && lock.fd >= 0)
-        if isPrepared {
-            guard let existing = loadMetadata() else {
-                throw WorkspaceError.foreign(url.path, "metadata.json is unreadable; inspect it or run 'tryfydeos reset --yes'")
-            }
-            return existing
+    func existingMetadata() throws -> Metadata {
+        guard let existing = loadMetadata() else {
+            throw WorkspaceError.foreign(url.path, "metadata.json is unreadable; inspect it or run 'tryfydeos reset --yes'")
         }
+        return existing
+    }
+
+    /// Converts the disk of `container` (.ova or .zip) into a sparse disk of `spec.diskBytes` and clones
+    /// the vars template; `record` is stored in the metadata with the image's length. Idempotent: a
+    /// prepared workspace is left alone.
+    public func prepare(lock: StorageLock, spec: FactorySpec, container: URL, record: FactoryRecord, varsTemplate: URL,
+                        progress: (_ done: Int64, _ total: Int64) -> Void = { _, _ in }) throws -> Metadata {
+        precondition(lock.path == lockFile.path && lock.fd >= 0)
+        if isPrepared { return try existingMetadata() }
         let fm = FileManager.default
         for leftover in [metadataFile, disk, efiVars, stagingDisk] { try? fm.removeItem(at: leftover) }
-        let raw = spec.image.rawBytes
-        var fs = statfs()
-        guard statfs(url.path, &fs) == 0 else { throw WorkspaceError.system("statfs \(url.path)", errno) }
-        let available = Int64(fs.f_bavail) * Int64(fs.f_bsize)
-        guard available >= raw + (1 << 30) else { throw WorkspaceError.noSpace(needed: raw + (1 << 30), available: available) }
+        let available = try freeBytes(url)
+        guard available >= workReserve else { throw WorkspaceError.noSpace(needed: workReserve, available: available) }
         try Self.clone(varsTemplate, to: efiVars)
-        try unpack(image, zstd: zstd, to: stagingDisk, rawBytes: raw, progress: progress)
+        let raw = try convert(container, to: stagingDisk, diskBytes: spec.diskBytes, progress: progress)
         guard rename(stagingDisk.path, disk.path) == 0 else { throw WorkspaceError.system("rename \(stagingDisk.path) -> \(disk.path)", errno) }
         guard truncate(disk.path, off_t(spec.diskBytes)) == 0 else { throw WorkspaceError.system("truncate \(disk.path)", errno) }
-        let metadata = Metadata(factory: FactoryRecord(file: spec.image.file, sha256: spec.image.sha256, rawBytes: raw),
-                                diskBytes: spec.diskBytes, mac: VMConfig.randomMAC(), created: utcTimestamp())
+        var record = record
+        record.rawBytes = raw
+        let metadata = Metadata(factory: record, diskBytes: spec.diskBytes, mac: VMConfig.randomMAC(), created: utcTimestamp())
         try writeJSON(metadata, to: metadataFile)
         return metadata
     }
 
-    /// zstd checks its frame checksums while decompressing; the size check catches a truncated or foreign image.
-    private func unpack(_ image: URL, zstd: URL, to output: URL, rawBytes: Int64,
-                        progress: (Int64, Int64) -> Void) throws {
+    /// Decodes the container's VMDK into a sparse file, skipping all-zero grains, and cuts it to the
+    /// FydeOS image inside: the disk is the image followed by zeros, and the image ends with its GPT's
+    /// alternate header. Returns that length.
+    private func convert(_ container: URL, to output: URL, diskBytes: Int64, progress: (Int64, Int64) -> Void) throws -> Int64 {
         var done = false
         defer { if !done { try? FileManager.default.removeItem(at: output) } }
-        let process = Process()
-        process.executableURL = zstd
-        process.arguments = ["-d", "-q", "-f", "-o", output.path, image.path]
-        let stderr = Pipe()
-        process.standardError = stderr
-        process.standardOutput = FileHandle.nullDevice
-        progress(0, rawBytes)
-        try process.run()
-        func written() -> Int64 {
-            ((try? FileManager.default.attributesOfItem(atPath: output.path))?[.size] as? NSNumber)?.int64Value ?? 0
+        let fd = Darwin.open(output.path, O_RDWR | O_CREAT | O_TRUNC, 0o600)
+        guard fd >= 0 else { throw WorkspaceError.system("open \(output.path)", errno) }
+        defer { close(fd) }
+        var end: Int64 = 0
+        var memberSize: Int64 = 0
+        var lastStep: Int64 = -1
+        let info = try VMDKContainer.decodeDisk(container, progress: { n, size in
+            memberSize = size
+            guard size > 0, n * 100 / size != lastStep else { return }
+            lastStep = n * 100 / size
+            progress(min(n, size), size)
+        }, write: { off, data in
+            guard let last = lastNonZero(data) else { return }
+            var written = 0
+            while written < data.count {
+                let n = pwrite(fd, data.baseAddress! + written, data.count - written, off_t(off) + off_t(written))
+                if n < 0 {
+                    if errno == EINTR { continue }
+                    throw WorkspaceError.system("write \(output.path)", errno)
+                }
+                written += n
+            }
+            end = max(end, off + Int64(last) + 1)
+        })
+        var header = [UInt8](repeating: 0, count: 512)
+        guard pread(fd, &header, 512, 512) == 512, header.prefix(8).elementsEqual("EFI PART".utf8) else {
+            throw ConfigError.invalid("\(container.path): no GPT on the disk")
         }
-        while process.isRunning {
-            usleep(250_000)
-            progress(min(written(), rawBytes), rawBytes)
+        let alternate = VMDK.u64(header, 32)
+        let raw = alternate < UInt64(Int64.max / 512) ? (Int64(alternate) + 1) * 512 : -1
+        if raw <= 0 || raw > info.capacity {
+            throw ConfigError.invalid("\(container.path): the GPT ends at \(raw), outside the \(info.capacity)-byte disk")
         }
-        process.waitUntilExit()
-        let message = String(decoding: stderr.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard process.terminationStatus == 0 else {
-            throw ConfigError.invalid("unpacking \(image.path) failed (zstd exit \(process.terminationStatus)): \(message)")
+        if end > raw {
+            throw ConfigError.invalid("\(container.path): foreign image: data beyond the GPT (at \(end), the GPT ends at \(raw))")
         }
-        let size = written()
-        guard size == rawBytes else {
-            throw ConfigError.invalid("\(image.path) unpacked to \(size) bytes, spec says \(rawBytes)")
+        if raw > diskBytes {
+            throw ConfigError.invalid("\(container.path): the image is \(raw) bytes, more than the \(diskBytes)-byte VM disk")
         }
-        guard chmod(output.path, 0o600) == 0 else { throw WorkspaceError.system("chmod \(output.path)", errno) }
-        progress(size, rawBytes)
+        guard ftruncate(fd, off_t(raw)) == 0 else { throw WorkspaceError.system("truncate \(output.path)", errno) }
+        if memberSize > 0 { progress(memberSize, memberSize) }
         done = true
+        return raw
     }
 
     /// Deletes the VM's disk, variables and metadata. Never touches runs/, the marker, the lock or the directory.

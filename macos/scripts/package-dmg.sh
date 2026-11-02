@@ -23,16 +23,13 @@ done
 repo=$(cd "$(dirname "$0")/../.." && pwd)
 app="$repo/dist/Try FydeOS.app"
 stage="$repo/dist/stage"
-spec="$repo/factory/spec.json"
 
 say() { echo "package-dmg: $*"; }
 die() { echo "package-dmg: $*" >&2; exit 1; }
 
 start=$(date +%s)
 [ -d "$app" ] || die "no $app (make app)"
-file=$(plutil -extract image.file raw -o - "$spec")
-bytes=$(plutil -extract image.bytes raw -o - "$spec")
-[ "$(stat -f %z "$app/Contents/Resources/factory/$file" 2>/dev/null)" = "$bytes" ] || die "$app does not carry $file (make app)"
+[ -f "$app/Contents/Resources/factory/spec.json" ] || die "$app does not carry factory/spec.json (make app)"
 version=$(plutil -extract CFBundleShortVersionString raw -o - "$app/Contents/Info.plist")
 codesign --verify --strict "$app" || die "$app does not verify"
 

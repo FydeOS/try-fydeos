@@ -24,7 +24,7 @@ private func touch(_ url: URL) throws {
     #expect(loc.qemu.path == resources + "/runtime/bin/qemu-system-aarch64")
     #expect(loc.firmwareCode.path == resources + "/firmware/edk2-aarch64-code.fd")
     #expect(loc.factorySpec.path == resources + "/factory/spec.json")
-    #expect(loc.zstd.path == resources + "/runtime/bin/zstd")
+    #expect(loc.images == imagesDir)
 }
 
 @Test func repoLayoutWithoutBundleAndEnvironmentOverrides() throws {
@@ -42,30 +42,62 @@ private func touch(_ url: URL) throws {
     #expect(overridden.firmware.path == "/opt/fw")
 }
 
-@Test func factoryImageCandidatesInResolutionOrder() throws {
+final class Listing: @unchecked Sendable {
+    private let lock = NSLock()
+    private var body: String?
+    var value: String? {
+        get { lock.lock(); defer { lock.unlock() }; return body }
+        set { lock.lock(); body = newValue; lock.unlock() }
+    }
+}
+
+@Test func factoryContainerChoosesImage() async throws {
+    let (pinned, pinnedSum) = testContent()
+    let listing = Listing()
+    let server = try HTTPTestServer { request in
+        if request.path == "/api" {
+            guard let body = listing.value else { return HTTPResponse(status: 503) }
+            return HTTPResponse(status: 200, body: Data(body.utf8))
+        }
+        return request.path == "/v1/pinned.zip" ? .ranged(pinned, request) : HTTPResponse(status: 404)
+    }
+    defer { server.stop() }
+    func list(_ sum: String, _ file: String) -> String {
+        #"{"list":[{"board":"b","version":"9.9","releaseDate":"2026-12-01","fileName":"\#(file)","checksum":"\#(sum)","#
+            + #""isEOL":false,"downloadUrls":[{"type":"official","url":"https://127.0.0.1:1/v2/\#(file)"}]}]}"#
+    }
     let root = try tempDir()
     defer { try? FileManager.default.removeItem(at: root) }
-    let zero = String(repeating: "0", count: 64)
-    let spec = try JSONDecoder().decode(FactorySpec.self, from: Data("""
-        {"schema": 1, "board": "b", "diskBytes": 2, "image": {"file": "img.zst", "bytes": 1, "sha256": "\(zero)",
-         "rawBytes": 1, "rawSha256": "\(zero)", "version": "v"}}
-        """.utf8))
-    try touch(root.appendingPathComponent("repo/runtime/lock.json"))
-    try touch(root.appendingPathComponent("repo/factory/spec.json"))
-    let exe = root.appendingPathComponent("repo/macos/.build/release/tryfydeos")
-    try touch(exe)
-    let repo = try Locations.discover(environment: ["TRY_FYDEOS_FACTORY_IMAGE": "/env/img.zst"], executable: exe)
-    #expect(repo.factoryImageCandidates(spec).map(\.path) == ["/env/img.zst", repo.root!.path + "/factory/img.zst"])
-    #expect(repo.factoryImage(spec) == nil)
-    try touch(root.appendingPathComponent("repo/factory/img.zst"))
-    #expect(repo.factoryImage(spec)?.path == repo.root!.path + "/factory/img.zst")
+    let spec = testSpec(url: server.baseURL + "/v1/pinned.zip", bytes: Int64(pinned.count), sha256: pinnedSum, api: server.baseURL + "/api")
+    var loc = Locations(root: nil, bundleResources: nil, runtime: root, firmware: root, factorySpec: root, factoryImageOverride: nil,
+                        images: root.appendingPathComponent("images"), appVersion: "1")
+    let pinnedFile = loc.images.appendingPathComponent("pinned.zip")
+    let want = FactoryRecord(url: spec.image.url, fileName: "pinned.zip", sha256: pinnedSum, version: "v")
+    func downloads() -> Int { server.requests.filter { $0.path == "/v1/pinned.zip" }.count }
 
-    let contents = root.appendingPathComponent("Try FydeOS.app/Contents")
-    let appExe = contents.appendingPathComponent("MacOS/TryFydeOS")
-    try touch(appExe)
-    try touch(contents.appendingPathComponent("Resources/factory/spec.json"))
-    let app = try Locations.discover(environment: [:], executable: appExe)
-    #expect(app.factoryImageCandidates(spec).map(\.path) == [app.bundleResources!.path + "/factory/img.zst"])
+    var lines: [String] = []
+    var (path, record) = try await loc.factoryContainer(spec: spec, say: { lines.append($0) })
+    #expect(path == pinnedFile && record == want && downloads() == 1)
+    #expect(lines.first?.hasPrefix("release API: ") == true && lines.first?.hasSuffix("using the pinned image") == true)
+    #expect(try Data(contentsOf: pinnedFile) == pinned)
+
+    listing.value = list(pinnedSum, "pinned.zip")
+    lines = []
+    (path, record) = try await loc.factoryContainer(spec: spec, say: { lines.append($0) })
+    #expect(path == pinnedFile && record == want && downloads() == 1)
+    #expect(lines == ["release API lists the pinned image pinned.zip", "using the downloaded image \(pinnedFile.path)"])
+
+    listing.value = list(String(repeating: "b", count: 64), "newer.zip")
+    lines = []
+    (path, record) = try await loc.factoryContainer(spec: spec, say: { lines.append($0) })
+    #expect(path == pinnedFile && record == want && downloads() == 1)
+    #expect(lines.first?.contains("newer.zip 9.9 (2026-12-01), but its size is unknown") == true)
+
+    loc.factoryImageOverride = vmdkFixture("test.ova")
+    (path, record) = try await loc.factoryContainer(spec: spec, say: { _ in })
+    #expect(path == vmdkFixture("test.ova") && record == FactoryRecord(fileName: "test.ova"))
+    loc.factoryImageOverride = root.appendingPathComponent("missing.ova")
+    await #expect(throws: ConfigError.self) { try await loc.factoryContainer(spec: spec, say: { _ in }) }
 }
 
 @Test func qemuAcceptsEitherBinaryName() throws {

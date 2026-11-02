@@ -29,15 +29,50 @@ public struct LaunchOptions: Sendable, Equatable {
     }
 }
 
+/// The slow steps of preparing a workspace.
+public enum PrepareStage: Sendable, Equatable {
+    case downloading
+    case converting
+}
+
+private final class ResultBox<T>: @unchecked Sendable {
+    var result: Result<T, Error>?
+}
+
+/// Runs `body` to completion from synchronous code on a thread that may block.
+public func blockingAwait<T>(_ body: @escaping () async throws -> T) throws -> T {
+    let box = ResultBox<T>()
+    let done = DispatchSemaphore(value: 0)
+    let work = UncheckedSendable(body)
+    Task.detached {
+        do { box.result = .success(try await work.value()) } catch { box.result = .failure(error) }
+        done.signal()
+    }
+    done.wait()
+    return try box.result!.get()
+}
+
+private struct UncheckedSendable<T>: @unchecked Sendable {
+    let value: T
+    init(_ value: T) { self.value = value }
+}
+
 extension Workspace {
-    public func prepare(lock: StorageLock, locations loc: Locations,
-                        progress: (_ bytesWritten: Int64, _ totalBytes: Int64) -> Void = { _, _ in }) throws -> Metadata {
+    /// Prepares from the FydeOS image, downloading it first if needed; `say` gets one line per slow step.
+    public func prepare(lock: StorageLock, locations loc: Locations, say: @escaping (String) -> Void = { _ in },
+                        progress: @escaping (PrepareStage, _ done: Int64, _ total: Int64) -> Void = { _, _, _ in }) throws -> Metadata {
         let spec = try FactorySpec.load(loc.factorySpec)
-        if isPrepared, let existing = loadMetadata() { return existing }
-        guard let image = loc.factoryImage(spec) else {
-            throw ConfigError.invalid("FydeOS image \(spec.image.file) not found (looked at: \(loc.factoryImageCandidates(spec).map(\.path).joined(separator: ", ")))")
+        if isPrepared { return try existingMetadata() }
+        let (container, record) = try blockingAwait {
+            try await loc.factoryContainer(spec: spec, say: say) { progress(.downloading, $0, $1) }
         }
-        return try prepare(lock: lock, spec: spec, image: image, zstd: loc.zstd, varsTemplate: loc.varsTemplate, progress: progress)
+        say("converting \(container.path) into \(disk.path)")
+        let start = Date()
+        let metadata = try prepare(lock: lock, spec: spec, container: container, record: record, varsTemplate: loc.varsTemplate) {
+            progress(.converting, $0, $1)
+        }
+        say(String(format: "converted in %.1f s (FydeOS image %lld bytes)", Date().timeIntervalSince(start), metadata.factory.rawBytes))
+        return metadata
     }
 }
 

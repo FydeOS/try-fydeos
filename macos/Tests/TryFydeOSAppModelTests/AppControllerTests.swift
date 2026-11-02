@@ -7,6 +7,7 @@ final class FakeDriver: VMDriver {
     var calls: [String] = []
     var events: ((VMEvent) -> Void)?
     var resetError: Error?
+    var prepared: FactoryRecord?
 
     func launch(_ options: LaunchOptions, events: @escaping (VMEvent) -> Void) {
         calls.append("launch \(options.cpus) \(options.memoryMiB)")
@@ -19,6 +20,11 @@ final class FakeDriver: VMDriver {
         calls.append("reset")
         if let resetError { throw resetError }
     }
+    func checkRelease(events: @escaping (VMEvent) -> Void) {
+        calls.append("release")
+        self.events = events
+    }
+    func preparedFactory() -> FactoryRecord? { prepared }
     func emit(_ e: VMEvent) { events?(e) }
 }
 
@@ -46,7 +52,7 @@ let ok = ExitStatus(code: 0, signal: nil)
     let (c, d, box) = makeController()
     #expect(c.canLaunch && !c.canShutDown && c.canFactoryReset)
     c.launch(LaunchOptions(cpus: 6, memoryMiB: 8192))
-    #expect(c.state == .preparing(bytes: 0, total: 0) && !c.canLaunch && !c.canShutDown && !c.canFactoryReset)
+    #expect(c.state == .preparing(stage: nil, bytes: 0, total: 0) && !c.canLaunch && !c.canShutDown && !c.canFactoryReset)
     d.emit(.starting(pid: 4242))
     #expect(c.state == .starting && c.canShutDown && c.vmPid == 4242)
     d.emit(.running)
@@ -63,10 +69,12 @@ let ok = ExitStatus(code: 0, signal: nil)
 @Test func prepareProgressUpdatesPreparingOnly() {
     let (c, d, _) = makeController()
     c.launch(LaunchOptions())
-    d.emit(.preparing(bytes: 50, total: 100))
-    #expect(c.state == .preparing(bytes: 50, total: 100))
+    d.emit(.preparing(stage: .downloading, bytes: 50, total: 100))
+    #expect(c.state == .preparing(stage: .downloading, bytes: 50, total: 100))
+    d.emit(.preparing(stage: .converting, bytes: 10, total: 100))
+    #expect(c.state == .preparing(stage: .converting, bytes: 10, total: 100))
     d.emit(.starting(pid: 4242))
-    d.emit(.preparing(bytes: 100, total: 100))
+    d.emit(.preparing(stage: .converting, bytes: 100, total: 100))
     #expect(c.state == .starting)
 }
 
@@ -96,7 +104,7 @@ let ok = ExitStatus(code: 0, signal: nil)
     #expect(box.errors == ["refusing to use /x: foreign"])
     #expect(box.errorTitles == [L(.errorLaunchTitle)])
     c.launch(LaunchOptions())
-    #expect(c.state == .preparing(bytes: 0, total: 0))
+    #expect(c.state == .preparing(stage: nil, bytes: 0, total: 0))
 }
 
 @Test func quitWhileIdleIsImmediate() {
@@ -168,8 +176,10 @@ let ok = ExitStatus(code: 0, signal: nil)
     #expect(AppState.notRunning(nil).statusText { _ in "" } == "Not running")
     #expect(AppState.running(since: Date()).statusText { _ in "09:41" } == "Running since 09:41")
     #expect(AppState.shuttingDown.statusText { _ in "" } == "Shutting down…")
-    #expect(AppState.preparing(bytes: 0, total: 0).statusText { _ in "" } == "Preparing…")
-    #expect(AppState.preparing(bytes: 50, total: 200).statusText { _ in "" } == "Unpacking FydeOS… 25%")
+    #expect(AppState.preparing(stage: nil, bytes: 0, total: 0).statusText { _ in "" } == "Preparing…")
+    #expect(AppState.preparing(stage: .downloading, bytes: 0, total: 0).statusText { _ in "" } == "Preparing…")
+    #expect(AppState.preparing(stage: .downloading, bytes: 50, total: 200).statusText { _ in "" } == "Downloading FydeOS… 25%")
+    #expect(AppState.preparing(stage: .converting, bytes: 150, total: 200).statusText { _ in "" } == "Converting FydeOS… 75%")
 }
 
 @Test func controllerStatusFollowsState() {
@@ -177,6 +187,24 @@ let ok = ExitStatus(code: 0, signal: nil)
     #expect(c.statusText { _ in "" } == L(.statusNotRunning))
     c.launch(LaunchOptions())
     #expect(c.statusText { _ in "" } == L(.statusPreparing))
-    d.emit(.preparing(bytes: 3, total: 4))
-    #expect(c.statusText { _ in "" } == L(.statusUnpacking, 75))
+    d.emit(.preparing(stage: .converting, bytes: 3, total: 4))
+    #expect(c.statusText { _ in "" } == L(.statusConverting, 75))
+}
+
+@Test func updateNoticeOnlyForAVMFromAnotherImage() {
+    let (c, d, _) = makeController()
+    var changes = 0
+    c.onReleaseChange = { changes += 1 }
+    c.checkRelease()
+    #expect(c.updateRelease == nil && d.calls == ["release"])
+    let r = Release(version: "23.2", releaseDate: "2026-12-01", fileName: "f.zip", sha256: String(repeating: "b", count: 64), url: "https://x/f.zip")
+    d.emit(.release(r))
+    #expect(changes == 1 && c.updateRelease == nil)
+    #expect(c.state == .notRunning(nil))
+    d.prepared = FactoryRecord(fileName: "old.zip", sha256: String(repeating: "a", count: 64))
+    #expect(c.updateRelease == r)
+    #expect(L(.updateAvailable, r.version, r.releaseDate) == "FydeOS 23.2 (2026-12-01) is available. Factory reset installs it.")
+    #expect(L(.resetMessageUpdate, r.version, r.releaseDate) == "Erase this VM and install FydeOS 23.2 (2026-12-01)?")
+    d.prepared?.sha256 = r.sha256
+    #expect(c.updateRelease == nil)
 }

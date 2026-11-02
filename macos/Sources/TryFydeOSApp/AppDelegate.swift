@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.onLaunch = { [weak self] prefs in self?.launch(prefs) }
         controller.onStateChange = { [weak self] state in self?.stateChanged(state) }
         controller.onError = { [weak self] title, message in self?.showError(title: title, message: message) }
+        controller.onReleaseChange = { [weak self] in self?.window.refresh() }
         controller.onReadyToQuit = { [weak self] in
             self?.log.write("VM stopped, terminating")
             NSApp.reply(toApplicationShouldTerminate: true)
@@ -51,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             signalSources.append(source)
         }
         showStartMenu()
+        controller.checkRelease()
         // Hidden test hook: `open --args -autoLaunch YES` launches without a click; it lives in the
         // argument domain only, so nothing is persisted.
         if argumentFlag("autoLaunch") {

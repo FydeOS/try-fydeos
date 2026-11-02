@@ -76,15 +76,9 @@ public final class CoreVMDriver: VMDriver, @unchecked Sendable {
                 let loc = try locations()
                 let lock = try takeLock()
                 log.linkRuns(workspace.runsDir)
-                var unpackStart: Date?
-                let metadata = try workspace.prepare(lock: lock, locations: loc) { bytes, total in
-                    if unpackStart == nil {
-                        unpackStart = Date()
-                        log.write("unpacking the FydeOS image into \(workspace.disk.path) (\(total) bytes)")
-                    }
-                    deliver(.preparing(bytes: bytes, total: total))
+                let metadata = try workspace.prepare(lock: lock, locations: loc, say: { log.write($0) }) { stage, done, total in
+                    deliver(.preparing(stage: stage, bytes: done, total: total))
                 }
-                if let unpackStart { log.write("unpacked in \(String(format: "%.1f", Date().timeIntervalSince(unpackStart))) s") }
                 let session = try VMSession.launch(options: options, locations: loc, workspace: workspace, lock: lock,
                                                    metadata: metadata) { log.write("run: \($0)") }
                 setSession(session)
@@ -120,6 +114,26 @@ public final class CoreVMDriver: VMDriver, @unchecked Sendable {
 
     public func resumeAfterWake() {
         current?.resumeAfterWake()
+    }
+
+    public func checkRelease(events: @escaping (VMEvent) -> Void) {
+        let log = self.log
+        let locations = self.locations
+        Task.detached {
+            do {
+                let loc = try locations()
+                let spec = try FactorySpec.load(loc.factorySpec)
+                let r = try await fetchRelease(api: spec.release.api, board: spec.release.board, appVersion: loc.appVersion)
+                log.write("release check: \(r.fileName) \(r.version) (\(r.releaseDate)), sha256 \(r.sha256)")
+                DispatchQueue.main.async { events(.release(r)) }
+            } catch {
+                log.write("release check: \(error)")
+            }
+        }
+    }
+
+    public func preparedFactory() -> FactoryRecord? {
+        workspace.isPrepared ? workspace.loadMetadata()?.factory : nil
     }
 
     public func factoryReset() throws {

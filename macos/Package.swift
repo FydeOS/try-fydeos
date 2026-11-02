@@ -20,11 +20,13 @@ let package = Package(
         .executable(name: "TryFydeOSApp", targets: ["TryFydeOSApp"]),
     ],
     targets: [
-        .target(name: "TryFydeOSCore"),
+        // Compression's zlib decoder consumes past the end of a stream, so the Adler-32 trailer cannot be checked.
+        .systemLibrary(name: "CZlib"),
+        .target(name: "TryFydeOSCore", dependencies: ["CZlib"]),
         .executableTarget(name: "TryFydeOSCLI", dependencies: ["TryFydeOSCore"]),
         .target(name: "TryFydeOSAppModel", dependencies: ["TryFydeOSCore"]),
         .executableTarget(name: "TryFydeOSApp", dependencies: ["TryFydeOSCore", "TryFydeOSAppModel"]),
-        .testTarget(name: "TryFydeOSCoreTests", dependencies: ["TryFydeOSCore"], swiftSettings: testSettings),
+        .testTarget(name: "TryFydeOSCoreTests", dependencies: ["TryFydeOSCore", "CZlib"], swiftSettings: testSettings),
         .testTarget(name: "TryFydeOSAppModelTests", dependencies: ["TryFydeOSAppModel"], swiftSettings: testSettings),
     ],
     swiftLanguageModes: [.v5]

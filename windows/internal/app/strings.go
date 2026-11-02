@@ -34,7 +34,6 @@ const (
 	StatusNotRunning      Key = "statusNotRunning"
 	StatusNotRunningAfter Key = "statusNotRunningAfter"
 	StatusPreparing       Key = "statusPreparing"
-	StatusUnpacking       Key = "statusUnpacking"
 	StatusDownloading     Key = "statusDownloading"
 	StatusConverting      Key = "statusConverting"
 	StatusStarting        Key = "statusStarting"
@@ -91,7 +90,6 @@ var English = map[Key]string{
 	StatusNotRunning:      "Not running",
 	StatusNotRunningAfter: "Not running. %s",
 	StatusPreparing:       "Preparing…",
-	StatusUnpacking:       "Unpacking FydeOS… %d%%",
 	StatusDownloading:     "Downloading FydeOS… %d%%",
 	StatusConverting:      "Converting FydeOS… %d%%",
 	StatusStarting:        "Starting…",

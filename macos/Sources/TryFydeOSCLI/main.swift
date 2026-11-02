@@ -10,7 +10,7 @@ let usage = """
 usage: tryfydeos <command> [options]
 
   doctor                      check host, runtime, firmware, factory image, workspace
-  prepare                     unpack the FydeOS image into the VM disk
+  prepare                     download and convert the FydeOS image into the VM disk
   run [vm options]            prepare if needed, boot the VM, supervise until QEMU exits
   inspect [vm options]        print the QEMU argv run would use
   status                      show workspace, last run and live QMP state
@@ -81,18 +81,13 @@ func jsonText(_ value: Any) -> String {
 }
 
 func prepare(_ ws: Workspace, _ lock: StorageLock, _ loc: Locations) throws -> Metadata {
-    let spec = try FactorySpec.load(loc.factorySpec)
-    var last = -1
-    let metadata = try ws.prepare(lock: lock, locations: loc) { bytes, total in
-        let step = total > 0 ? Int(bytes * 10 / total) : 0
-        guard step != last else { return }
-        last = step
-        say("unpacking the FydeOS image: \(step * 10)%")
+    var last: (PrepareStage, Int)?
+    return try ws.prepare(lock: lock, locations: loc, say: say) { stage, done, total in
+        let step = total > 0 ? Int(done * 10 / total) : 0
+        guard last.map({ $0 != stage || $1 != step }) ?? true else { return }
+        last = (stage, step)
+        say("\(stage == .downloading ? "downloading" : "converting") the FydeOS image: \(step * 10)%")
     }
-    if metadata.factory.sha256 != spec.image.sha256 {
-        say("note: this VM was prepared from factory \(metadata.factory.sha256.prefix(12)); spec now pins \(spec.image.sha256.prefix(12)) (reset to switch)")
-    }
-    return metadata
 }
 
 func cmdDoctor(_ o: Options) throws -> Int32 {
@@ -130,15 +125,29 @@ func cmdDoctor(_ o: Options) throws -> Int32 {
         check((try? FactorySpec.sha256(of: file)) == String(parts[0]), "firmware \(file.path)")
     }
     let spec = try FactorySpec.load(loc.factorySpec)
-    report("info", "factory spec \(spec.image.file) \(spec.image.version) \(spec.board)")
-    report("info", "factory raw \(spec.image.rawBytes) bytes, sha256 \(spec.image.rawSha256); VM disk \(spec.diskBytes) bytes (sparse)")
-    if let image = loc.factoryImage(spec) {
-        let size = ((try? fm.attributesOfItem(atPath: image.path))?[.size] as? NSNumber)?.int64Value ?? -1
-        check(size == spec.image.bytes, "factory image \(image.path) (\(size) bytes, spec says \(spec.image.bytes))")
-    } else {
-        check(false, "factory image \(spec.image.file) (looked at: \(loc.factoryImageCandidates(spec).map(\.path).joined(separator: ", ")))", missing: true)
+    report("info", "factory spec \(loc.factorySpec.path): board \(spec.board), VM disk \(spec.diskBytes) bytes (sparse)")
+    report("info", "pinned image \(spec.image.url) (\(spec.image.bytes) bytes, sha256 \(spec.image.sha256)): \(spec.image.version)")
+    if let image = loc.factoryImageOverride {
+        var isDir: ObjCBool = false
+        let exists = fm.fileExists(atPath: image.path, isDirectory: &isDir)
+        check(exists && !isDir.boolValue, "local image \(image.path) (TRY_FYDEOS_FACTORY_IMAGE)", missing: !exists)
     }
-    check(fm.isExecutableFile(atPath: loc.zstd.path), "zstd \(loc.zstd.path)", missing: !fm.fileExists(atPath: loc.zstd.path))
+    let images = ((try? fm.contentsOfDirectory(atPath: loc.images.path)) ?? []).sorted()
+    if images.isEmpty {
+        report("info", "images \(loc.images.path): none downloaded yet")
+    } else {
+        report("info", "images \(loc.images.path):")
+        for name in images {
+            let size = ((try? fm.attributesOfItem(atPath: loc.images.appendingPathComponent(name).path))?[.size] as? NSNumber)?.int64Value ?? -1
+            report("info", "  \(name.padding(toLength: max(48, name.count), withPad: " ", startingAt: 0)) \(size) bytes")
+        }
+    }
+    do {
+        let r = try blockingAwait { try await fetchRelease(api: spec.release.api, board: spec.release.board, appVersion: loc.appVersion) }
+        report("info", "release API latest \(spec.release.board): \(r.fileName) \(r.version) (\(r.releaseDate)), sha256 \(r.sha256)")
+    } catch {
+        report("info", "release API: \(error)")
+    }
     let ws = Workspace(url: o.workspace)
     switch ws.state {
     case .absent: report("info", "workspace \(ws.url.path) absent (prepare creates it)")
@@ -157,7 +166,9 @@ func cmdPrepare(_ o: Options) throws -> Int32 {
     let lock = try ws.open()
     let metadata = try prepare(ws, lock, loc)
     print("prepared \(ws.url.path)")
-    print("factory \(metadata.factory.file) sha256 \(metadata.factory.sha256)")
+    let f = metadata.factory
+    print("factory \(f.fileName) sha256 \(f.sha256.isEmpty ? "-" : f.sha256) version \(f.version.isEmpty ? "-" : f.version)")
+    print("image \(metadata.factory.rawBytes) bytes")
     print("disk \(ws.disk.path) \(metadata.diskBytes.map(String.init) ?? "-") bytes")
     print("mac \(metadata.mac) created \(metadata.created)")
     return 0

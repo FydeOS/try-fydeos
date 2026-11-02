@@ -1,5 +1,5 @@
 #!/bin/bash
-# Assemble and sign dist/Try FydeOS.app with the zstd factory image in Resources/factory.
+# Assemble and sign dist/Try FydeOS.app; it downloads the FydeOS image at first launch.
 #   --sign-identity ID     codesign identity (default "-", ad hoc)
 set -euo pipefail
 
@@ -29,15 +29,6 @@ die() { echo "build-app: $*" >&2; exit 1; }
 count=$(find "$runtime_src" -type f | wc -l | tr -d ' ')
 [ "$count" = 17 ] || die "runtime has $count files, expected 17"
 ls "$repo"/firmware/*.fd >/dev/null 2>&1 || die "no firmware in $repo/firmware (make firmware)"
-file=$(plutil -extract image.file raw -o - "$repo/factory/spec.json")
-bytes=$(plutil -extract image.bytes raw -o - "$repo/factory/spec.json")
-sha=$(plutil -extract image.sha256 raw -o - "$repo/factory/spec.json")
-image="$repo/factory/$file"
-[ -f "$image" ] || die "factory image $image missing"
-size=$(stat -f %z "$image")
-[ "$size" = "$bytes" ] || die "factory image $image is $size bytes, spec says $bytes"
-say "checking sha256 of $image"
-[ "$(openssl dgst -sha256 -r "$image" | cut -d' ' -f1)" = "$sha" ] || die "factory image $image does not match the spec's sha256"
 
 say "swift build -c release"
 (cd "$repo/macos" && swift build -c release --product TryFydeOSApp)
@@ -57,7 +48,6 @@ cp "$icon" "$res/TryFydeOS.icns"
 ditto "$runtime_src" "$res/runtime"
 cp "$repo"/firmware/*.fd "$res/firmware/"
 cp "$repo/factory/spec.json" "$res/factory/spec.json"
-cp -c "$image" "$res/factory/$file" 2>/dev/null || cp "$image" "$res/factory/$file"
 
 # Launch Services labels the Dock tile and menu bar with the executable's file name.
 mv "$res/runtime/bin/qemu-system-aarch64" "$res/runtime/bin/Try FydeOS"

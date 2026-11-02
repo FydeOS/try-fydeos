@@ -15,9 +15,11 @@ written fresh.
 
 ### Guest: the FydeOS vmware image, unmodified at run time
 
-- Built by `cros build-image --board=arm64-vmware-io` on the FydeOS
-  workstation. Raw GPT disk, boots through UEFI (edk2) and GRUB from the
-  ESP; GRUB selects "local image A" without dm-verity on dev images.
+- The published `arm64-vmware` release (`FydeOS-VMWare-v23.1-Preview1-arm64-io.zip`):
+  a VMware bundle whose `chromiumos.vmdk` holds the raw GPT image built by
+  `cros build-image --board=arm64-vmware-io`, followed by zeros. Boots
+  through UEFI (edk2) and GRUB from the ESP; GRUB selects "local image A"
+  without dm-verity.
 - ACPI is mandatory: the kernel has no device-tree PCI host, so with
   `acpi=off` no virtio-pci device exists.
 - Serial log needs no command-line change. The kernel honours the ACPI
@@ -91,8 +93,9 @@ why `gl=on` is the default and why the tablet is virtio, not USB.
 ### Launcher: Swift, QEMU owns the window
 
 - `TryFydeOSCore` (library, unit-tested): VM configuration to argv,
-  storage (zstd unpack into a sparse disk, per-VM EFI variables, lock),
-  QMP client, lifecycle (powerdown ladder, sleep pause), run logs.
+  release API client, resumable image download, VMDK decoder, storage
+  (conversion into a sparse disk, per-VM EFI variables, lock), QMP
+  client, lifecycle (powerdown ladder, sleep pause), run logs.
 - `TryFydeOS` (AppKit, `LSUIElement`): start menu, then accessory mode
   while QEMU runs. The rebranded QEMU process owns the window, Dock entry
   and menu bar. Once QMP answers, the launcher yields the foreground to the
@@ -102,7 +105,8 @@ why `gl=on` is the default and why the tablet is virtio, not USB.
 - Start menu: a fixed-width window of cards (processor cores and memory;
   full screen, on by default, and microphone switches; factory reset behind
   a confirmation alert), the last-run status and a full-width Launch button
-  that shows the unpack progress. Logs and Quit live in the app menu. Hidden: `forwards` default / `TRY_FYDEOS_FORWARDS`
+  that shows the download and conversion progress. The reset card names a
+  newer image when the release API lists one. Logs and Quit live in the app menu. Hidden: `forwards` default / `TRY_FYDEOS_FORWARDS`
   (comma-separated host:guest ports on 127.0.0.1), like `workspace`.
 - Storage lock: `flock` on `<vm>/.lock`, taken before preparation, held
   for the app's lifetime and inherited by QEMU through `-add-fd`. Never
@@ -116,29 +120,64 @@ why `gl=on` is the default and why the tablet is virtio, not USB.
 
 ### Packaging
 
-`Try FydeOS.app` (~1.4 GB) holds the runtime, firmware, `spec.json`,
-icon and the factory image zstd-compressed (1.36 GB) under
-`Contents/Resources`; the QEMU binary is installed as
-`runtime/bin/Try FydeOS`. Preparing a VM unpacks the image with the
-bundled `zstd` into the workspace, checks the raw size and extends the
-file, sparse, to 64 GiB (D9). There is no image store and no import step.
-Ad-hoc signed during development without `--deep`, so the QEMU
-hypervisor entitlement survives; Developer ID plus notarization are wired
-in `build-app.sh` and `package-dmg.sh` but unexercised. DMG is ULFO via
-`hdiutil`.
+`Try FydeOS.app` (173 MB) holds the runtime, firmware, `spec.json` and
+icon under `Contents/Resources`; the QEMU binary is installed as
+`runtime/bin/Try FydeOS`. It carries no FydeOS image (D9 revised
+2026-11-02): the first Launch downloads the published VMware image and
+converts it. Ad-hoc signed during development without `--deep`, so the
+QEMU hypervisor entitlement survives; Developer ID plus notarization are
+wired in `build-app.sh` and `package-dmg.sh` but unexercised. DMG is ULFO
+via `hdiutil`.
+
+`factory/spec.json`, schema 2: `image` pins the published download (`url`,
+`bytes`, `sha256` of the zip, `version` text), `release` names the release
+API (`api`, board `arm64-vmware`), and `diskBytes` (64 GiB), `board` and
+the `kernelCommandLine` facts stay as before.
+
+A new VM is prepared in three steps:
+
+1. Choose: `TRY_FYDEOS_FACTORY_IMAGE` (a local `.ova` or `.zip`, no
+   download, no hash check, recorded by file name only); otherwise the
+   release API's entry for the board when its checksum differs from the
+   pinned one, else the pinned image. The API call has a 5 s timeout; any
+   failure falls back to the pinned image. The API gives no size, so the
+   size of its download is read from a one-byte range request.
+2. Download into `~/Library/Application Support/Try FydeOS/images/<file
+   name>` through a `.part` file that resumes with `Range` (a 200 answer
+   restarts it), then check the sha256; a mismatch deletes the part. An
+   existing file of the expected size is used without a download, so a
+   factory reset converts again from `images/`. Needs the image size plus
+   10 GiB free.
+3. Convert: `/usr/bin/tar` (libarchive reads tar and zip) streams the
+   container's single `*.vmdk` member into the decoder, which reads it
+   strictly forward: monolithicSparse in the zip, streamOptimized in an
+   OVA, whose zlib grains are inflated with libz (the Compression
+   framework's decoder hides where a zlib stream ends, so it cannot check
+   the Adler-32 trailer). Non-zero grains are written with `pwrite` into a
+   sparse APFS file. The image ends at (GPT alternate header LBA + 1) * 512
+   (7,482,718,720 bytes for v23.1 Preview1); a disk with non-zero data
+   beyond it is refused as foreign. The file is cut there, then extended to
+   `diskBytes`. Needs 10 GiB free.
+
+`metadata.json` records `factory` `{url, fileName, sha256, version,
+rawBytes}`; older workspaces' `file` reads as `fileName`. The app asks the
+release API once at start; when the prepared VM's `sha256` differs from the
+API's checksum, the reset card shows the newer version, the reset alert
+offers to install it, and the Launch after the reset downloads it.
+`tryfydeos doctor` prints the pinned image, the files in `images/` and the
+release API's current entry.
 
 Why this layout (measured in milestones 3 and 4):
 - Install the QEMU binary inside the bundle as
   `Contents/Resources/runtime/bin/Try FydeOS`, as upstream does. Launch
   Services labels the Dock tile and menu bar with the executable's file
   name; the identity patch's `setProcessName` runs too late to change it.
-- Bundle the factory image compressed, never raw. On the first launch of
-  every new code signature, Gatekeeper runs an XProtect "direct malware
-  and dylib scan" of the whole bundle before `main` runs (measured on
-  2026-10-16 and 2026-10-19: 47 s for the 7.5 GB bundle with the raw
-  image, 1.8 s for 173 MB without it; later launches are cached by code hash). Scan time
-  scales with bundle size; zstd -19 brings the image to 18% of raw, and
-  unpacking takes 3.2 s on an M4 (D9).
+- Bundle no image. On the first launch of every new code signature,
+  Gatekeeper runs an XProtect "direct malware and dylib scan" of the whole
+  bundle before `main` runs (measured on 2026-10-16 and 2026-10-19: 47 s
+  for the 7.5 GB bundle with the raw image, 1.8 s for 173 MB without it;
+  later launches are cached by code hash). Scan time scales with bundle
+  size.
 
 ## Milestones
 
@@ -153,6 +192,15 @@ Why this layout (measured in milestones 3 and 4):
    Developer ID when available.
 5. Integrations: clipboard via `qemu-vdagent`, shared folder, port
    forwards, then guest-side display zoom in `project-vmware`.
+6. Image download (D9 revised 2026-11-02), as on Windows: spec schema 2,
+   release API, resumable download into `images/`, VMDK conversion cut at
+   the GPT end, update notice in the reset card; the app drops the zstd
+   image (173 MB). Measured on the M4 on 2026-11-02 with the CLI: the
+   1,574,658,456-byte v23.1 Preview1 zip downloaded in 128 s (12.3 MB/s),
+   converted in 5.4 s (3.7 GB allocated), identical to qemu-img's
+   conversion over its 7,482,718,720 bytes; the guest booted to the
+   console on virtio-gpu and shut down cleanly; a second run neither
+   downloads nor converts. The app's first Launch is not measured yet.
 
 ## Known risks
 
@@ -193,8 +241,12 @@ Why this layout (measured in milestones 3 and 4):
 - Leftover image store: builds before D9 imported the raw image into
   `~/Library/Application Support/Try FydeOS/factory/` (7.5 GB). Nothing
   reads it any more; it is removed by hand. Workspaces prepared from it
-  keep working (7.5 GB disk, `tryfydeos prepare` notes the older factory)
-  until a factory reset.
+  keep working (7.5 GB disk) until a factory reset.
+- Image source: the first Launch needs download.fydeos.io and the release
+  API; offline first launches fail unless `TRY_FYDEOS_FACTORY_IMAGE` names
+  a local image. If the file behind the pinned URL is replaced while the
+  API is unreachable, the download fails its sha256 check until the spec
+  is updated.
 - Window mode sizing: resolved by the window-master overlay patch
   (milestone 2); the initial window is upstream's 75% 16:9 frame.
 - Console (frecon) updates lost (fixed host-side): with the guest mode in

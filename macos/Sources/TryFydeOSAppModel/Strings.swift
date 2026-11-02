@@ -28,7 +28,6 @@ public enum StringKey: String, CaseIterable, Sendable {
     case statusNotRunning
     case statusNotRunningAfter
     case statusPreparing
-    case statusUnpacking
     case statusDownloading
     case statusConverting
     case statusStarting
@@ -87,7 +86,6 @@ public enum Strings {
         .statusNotRunning: "Not running",
         .statusNotRunningAfter: "Not running. %@",
         .statusPreparing: "Preparing…",
-        .statusUnpacking: "Unpacking FydeOS… %d%%",
         .statusDownloading: "Downloading FydeOS… %d%%",
         .statusConverting: "Converting FydeOS… %d%%",
         .statusStarting: "Starting…",

@@ -33,6 +33,7 @@ final class StartMenuWindow: NSWindow, NSWindowDelegate {
     private let launchButton = NSButton(title: L(.launch), target: nil, action: nil)
     private let launchSpinner = NSProgressIndicator()
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
+    private let updateLabel = NSTextField(wrappingLabelWithString: "")
     private let imageProgress = NSProgressIndicator()
     private let timeFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -96,13 +97,17 @@ final class StartMenuWindow: NSWindow, NSWindowDelegate {
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.preferredMaxLayoutWidth = Self.contentWidth
 
+        updateLabel.font = .systemFont(ofSize: 11)
+        updateLabel.textColor = .controlAccentColor
+        updateLabel.preferredMaxLayoutWidth = 300
+
         let header = header()
         let captions = [caption(L(.sectionResources)), caption(L(.sectionDisplay)), caption(L(.sectionReset))]
         let cards = [
             card([row(L(.cpus), control: cpuPopup), row(L(.memory), control: memoryPopup)]),
             card([row(L(.fullScreen), detail: L(.fullScreenDetail), control: fullScreenSwitch),
                   row(L(.microphone), detail: L(.microphoneDetail), control: microphoneSwitch)]),
-            card([row(L(.factoryReset), detail: L(.factoryResetDetail), control: resetButton)]),
+            card([row(L(.factoryReset), detail: L(.factoryResetDetail), extra: updateLabel, control: resetButton)]),
         ]
         stack.setViews([header, captions[0], cards[0], captions[1], cards[1], captions[2], cards[2],
                         statusLabel, launchButton, imageProgress], in: .top)
@@ -154,7 +159,7 @@ final class StartMenuWindow: NSWindow, NSWindowDelegate {
         return label
     }
 
-    private func row(_ title: String, detail: String? = nil, control: NSView) -> NSView {
+    private func row(_ title: String, detail: String? = nil, extra: NSView? = nil, control: NSView) -> NSView {
         let titleLabel = NSTextField(labelWithString: title)
         titleLabel.font = .systemFont(ofSize: 13)
         var labels: [NSView] = [titleLabel]
@@ -165,6 +170,7 @@ final class StartMenuWindow: NSWindow, NSWindowDelegate {
             detailLabel.preferredMaxLayoutWidth = 300
             labels.append(detailLabel)
         }
+        if let extra { labels.append(extra) }
         let text = NSStackView(views: labels)
         text.orientation = .vertical
         text.alignment = .leading
@@ -214,6 +220,12 @@ final class StartMenuWindow: NSWindow, NSWindowDelegate {
             control.isEnabled = idle
         }
         resetButton.isEnabled = controller.canFactoryReset
+        if let update = controller.updateRelease {
+            updateLabel.stringValue = L(.updateAvailable, update.version, update.releaseDate)
+            updateLabel.isHidden = false
+        } else {
+            updateLabel.isHidden = true
+        }
         standardWindowButton(.closeButton)?.isEnabled = idle
         launchButton.isEnabled = controller.canLaunch
 
@@ -226,7 +238,7 @@ final class StartMenuWindow: NSWindow, NSWindowDelegate {
         }
         if state == .starting { launchSpinner.startAnimation(nil) } else { launchSpinner.stopAnimation(nil) }
 
-        if case .preparing(let bytes, let total) = state {
+        if case .preparing(_, let bytes, let total) = state {
             imageProgress.isHidden = false
             imageProgress.isIndeterminate = total == 0
             if total > 0 {
@@ -273,7 +285,11 @@ final class StartMenuWindow: NSWindow, NSWindowDelegate {
         let alert = NSAlert()
         alert.alertStyle = .critical
         alert.messageText = L(.resetTitle)
-        alert.informativeText = L(.resetMessage)
+        if let update = controller.updateRelease {
+            alert.informativeText = L(.resetMessageUpdate, update.version, update.releaseDate)
+        } else {
+            alert.informativeText = L(.resetMessage)
+        }
         alert.addButton(withTitle: L(.cancel))
         let confirm = alert.addButton(withTitle: L(.resetConfirm))
         confirm.hasDestructiveAction = true
