@@ -64,6 +64,7 @@ type startMenu struct {
 		memoryLabel, memoryMinus, memoryValue, memoryPlus   uintptr
 		fullScreen, fullScreenDetail, mic, micDetail        uintptr
 		resetLabel, resetDetail, reset, status, launch, bar uintptr
+		resetUpdate                                         uintptr
 	}
 	grey map[uintptr]bool
 
@@ -142,6 +143,7 @@ func (m *startMenu) build() {
 	c.groupReset = m.child("BUTTON", buttonText(app.L(app.SectionReset)), bsGroupBox, 0)
 	c.resetLabel = m.label(app.L(app.FactoryReset), false, 0)
 	c.resetDetail = m.label(app.L(app.FactoryResetDetail), true, 0)
+	c.resetUpdate = m.label("", false, 0)
 	c.reset = m.child("BUTTON", buttonText(app.L(app.ResetButton)), wsTabStop, idReset)
 
 	c.status = m.label("", true, 0)
@@ -165,7 +167,7 @@ func (m *startMenu) allControls() []uintptr {
 	c := &m.ctl
 	return []uintptr{c.title, c.subtitle, c.version, c.groupResources, c.groupDisplay, c.groupReset,
 		c.cpuLabel, c.cpuMinus, c.cpuValue, c.cpuPlus, c.memoryLabel, c.memoryMinus, c.memoryValue, c.memoryPlus,
-		c.fullScreen, c.fullScreenDetail, c.mic, c.micDetail, c.resetLabel, c.resetDetail, c.reset, c.status, c.launch}
+		c.fullScreen, c.fullScreenDetail, c.mic, c.micDetail, c.resetLabel, c.resetDetail, c.resetUpdate, c.reset, c.status, c.launch}
 }
 
 // applyDPI creates the fonts and header icon for the window's current DPI.
@@ -270,9 +272,15 @@ func (m *startMenu) layout() int32 {
 	textW := innerW - bw - s(12)
 	_, dh := measureText(m.font, app.L(app.FactoryResetDetail), textW)
 	textH = line + s(2) + dh
+	var uh int32
+	if text := windowText(c.resetUpdate); text != "" {
+		_, uh = measureText(m.font, text, textW)
+		textH += s(2) + uh
+	}
 	rowH = max(bh, textH)
 	move(c.resetLabel, inner, y+(rowH-textH)/2, textW, line)
 	move(c.resetDetail, inner, y+(rowH-textH)/2+line+s(2), textW, dh)
+	move(c.resetUpdate, inner, y+(rowH-textH)/2+line+s(2)+dh+s(2), textW, uh)
 	move(c.reset, inner+innerW-bw, y+(rowH-bh)/2, bw, bh)
 	y += rowH + s(12)
 	group(c.groupReset, top)
@@ -319,13 +327,20 @@ func (m *startMenu) refresh() {
 	setText(c.launch, buttonText(st.LaunchTitle()))
 	setText(c.cpuValue, app.L(app.CPUValue, m.prefs.CPUs))
 	setText(c.memoryValue, app.L(app.MemoryValue, m.prefs.MemoryMiB/1024))
+	if r := m.controller.UpdateRelease(); r != nil {
+		setText(c.resetUpdate, app.L(app.UpdateAvailable, r.Version, r.ReleaseDate))
+		procShowWindow.Call(c.resetUpdate, swShow)
+	} else {
+		setText(c.resetUpdate, "")
+		procShowWindow.Call(c.resetUpdate, swHide)
+	}
 	cpus, memory := app.CPUChoices(m.host), app.MemoryChoices(m.host)
 	enable(c.cpuMinus, idle && m.prefs.CPUs > cpus[0])
 	enable(c.cpuPlus, idle && m.prefs.CPUs < cpus[len(cpus)-1])
 	enable(c.memoryMinus, idle && m.prefs.MemoryMiB > memory[0])
 	enable(c.memoryPlus, idle && m.prefs.MemoryMiB < memory[len(memory)-1])
 	for _, h := range []uintptr{c.groupResources, c.cpuLabel, c.cpuValue, c.memoryLabel, c.memoryValue,
-		c.groupDisplay, c.fullScreen, c.fullScreenDetail, c.mic, c.micDetail, c.groupReset, c.resetLabel, c.resetDetail} {
+		c.groupDisplay, c.fullScreen, c.fullScreenDetail, c.mic, c.micDetail, c.groupReset, c.resetLabel, c.resetDetail, c.resetUpdate} {
 		enable(h, idle)
 	}
 	enable(c.reset, m.controller.CanFactoryReset())
@@ -445,8 +460,12 @@ func (m *startMenu) factoryReset() {
 	if !m.controller.CanFactoryReset() {
 		return
 	}
+	message := app.L(app.ResetMessage)
+	if r := m.controller.UpdateRelease(); r != nil {
+		message = app.L(app.ResetMessageUpdate, r.Version, r.ReleaseDate)
+	}
 	resetHook, _, _ = procSetWindowsHookExW.Call(whCBT, resetHookCallback, 0, uintptr(windows.GetCurrentThreadId()))
-	answer := messageBox(m.hwnd, app.L(app.ResetTitle)+"\n\n"+app.L(app.ResetMessage), app.L(app.WindowTitle),
+	answer := messageBox(m.hwnd, app.L(app.ResetTitle)+"\n\n"+message, app.L(app.WindowTitle),
 		mbOKCancel|mbIconWarning|mbDefButton2)
 	if resetHook != 0 {
 		procUnhookWindowsHookEx.Call(resetHook)
@@ -625,6 +644,7 @@ func main() {
 	if err != nil {
 		fatal(err.Error())
 	}
+	loc.AppVersion = appVersion
 	m := &startMenu{loc: loc, host: core.CurrentHost(), log: app.OpenAppLog(loc.LogsDir()), grey: map[uintptr]bool{}}
 	menu = m
 	m.log.Write(fmt.Sprintf("app started, version %s, workspace %s, runtime %s, spec %s", appVersion, loc.Workspace, loc.Runtime, loc.SpecName()))
@@ -646,6 +666,7 @@ func main() {
 		m.log.Write("VM stopped, exiting")
 		procDestroyWindow.Call(m.hwnd)
 	}
+	m.controller.OnReleaseChange = m.refresh
 
 	m.instance, _, _ = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetModuleHandleW").Call(0)
 	cursor, _, _ := procLoadCursorW.Call(0, idcArrow)
@@ -677,6 +698,7 @@ func main() {
 	m.build()
 	m.applyDPI()
 	m.show()
+	m.controller.CheckRelease()
 
 	var mm msg
 	for {

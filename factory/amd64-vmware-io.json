@@ -1,6 +1,7 @@
 {
-  "schema": 1,
-  "image": {"file": "fydeos-amd64-vmware-io-R150-16700.56.0-d20261027.bin.zst", "bytes": 1604019150, "sha256": "063e7aa1f709a28a8b81120f857e1051c52ce1e625bcb656500f80d840d7b2ae", "rawBytes": 7314946560, "rawSha256": "08d5dee654554bc94a29927cd712773a379052ccf08db5871ba130d3ddb32ddc", "version": "R150-16700.56.0 release v23.1 Preview1 16700.56.23.28, 2026-10-27 (kernel 025+026, chromium 0173 with zoom guard, crosh r1857)"},
+  "schema": 2,
+  "image": {"url": "https://download.fydeos.io/v23.1/FydeOS-VMWare-v23.1-Preview1-x86_64-io.ova", "bytes": 1911863296, "sha256": "57062f6e21f1d0933d7bb0e2f0a8ceb1fc78d16c73b252ba0f679ff627a2f4ba", "version": "16700.56.23.29 release v23.1 Preview1, 2026-10-30"},
+  "release": {"api": "https://release-api.fydeos.io/api/downloads?l=en", "board": "amd64-vmware"},
   "diskBytes": 68719476736,
   "board": "amd64-vmware-io",
   "kernelCommandLine": {

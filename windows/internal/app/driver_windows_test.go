@@ -101,8 +101,8 @@ func TestCoreDriverRelaunchesAfterGuestReboot(t *testing.T) {
 	}
 	os.WriteFile(ws.MetadataFile(), []byte(`{"schema":1,"factory":{"sha256":"`+strings.Repeat("a", 64)+`"},"mac":"52:54:00:12:34:56"}`), 0o600)
 	spec := filepath.Join(root, "spec.json")
-	os.WriteFile(spec, []byte(`{"schema":1,"image":{"file":"x.zst","bytes":1,"sha256":"`+strings.Repeat("a", 64)+
-		`","rawBytes":1,"rawSha256":"`+strings.Repeat("b", 64)+`"},"diskBytes":2}`), 0o600)
+	os.WriteFile(spec, []byte(`{"schema":2,"image":{"url":"https://h/x.ova","bytes":1,"sha256":"`+strings.Repeat("a", 64)+
+		`"},"release":{"api":"https://h/api","board":"b"},"diskBytes":2}`), 0o600)
 
 	events := make(chan Event, 16)
 	d := &CoreDriver{

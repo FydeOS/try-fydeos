@@ -5,11 +5,12 @@ Go launcher for the Windows port; architecture and the QEMU contract are in
 host with the Windows Hypervisor Platform enabled.
 
 ```
-internal/core/      factory spec, locations, workspace, lock, argv, QMP, session, host probe
+internal/core/      factory spec, release API, download, locations, workspace, lock, argv, QMP, session, host probe
+internal/vmdk/      VMDK decoder (streamOptimized, monolithicSparse) and .ova/.zip member access
 internal/payload/   payload appended to the GUI exe: PE overlay, index, verified readers, Append
 internal/app/       GUI model without Win32: strings, preferences, state machine, core driver, app log
 cmd/tryfydeos/      console CLI: doctor, prepare, run, inspect, shutdown, reset
-cmd/tryfydeos-pack/ workstation packer: trimmed runtime.zip + image + spec appended to the GUI exe
+cmd/tryfydeos-pack/ workstation packer: trimmed runtime.zip + spec appended to the GUI exe
 cmd/TryFydeOSApp/   GUI "Try FydeOS.exe": start menu (Win32, no cgo), icon + rsrc_windows_amd64.syso
 versioninfo.rc      icon, common-controls v6 manifest (TryFydeOS.manifest), version block
 runtime.lock.json   pinned Try Omarchy WINQ-EMU runtime (url + sha256)
@@ -23,19 +24,20 @@ make win-runtime   # fetch + verify the pinned runtime, unpack into out/win-runt
 make win-test      # go vet + go test ./... (OS-independent parts, fake QEMU)
 make win-build     # out/win-build/tryfydeos.exe and "Try FydeOS.exe" (GOOS=windows, no cgo)
 make win-rsrc      # re-render TryFydeOS.ico and rebuild rsrc_windows_amd64.syso
-make win-image     # zstd -T32 -19 the amd64 raw image into factory/
 make win-dist      # dist/Try FydeOS-<version>.exe + .sha256 (see Packaging)
 make win-sync      # exe, factory/amd64-vmware-io.json and windows/ -> NUC D:\try-fydeos\dev\
 ```
 
-The `.zst` itself is copied to the NUC once, by hand, into `D:\try-fydeos\factory\`.
+No image is built or copied: the launcher downloads the published VMware
+image on the first Launch. To test without downloading, copy an `.ova` (or a
+VMware `.zip`) to the NUC once and point `TRY_FYDEOS_FACTORY_IMAGE` at it.
 
 ## Run on the NUC
 
 ```powershell
 $env:TRY_FYDEOS_WORKSPACE = "D:\try-fydeos\dev\vm"
 $env:TRY_FYDEOS_RUNTIME = "D:\try-fydeos\runtime"
-$env:TRY_FYDEOS_FACTORY_IMAGE = "D:\try-fydeos\factory\fydeos-amd64-vmware-io-R150-16700.56.0-d20261027.bin.zst"
+$env:TRY_FYDEOS_FACTORY_IMAGE = "D:\try-fydeos\factory\FydeOS-VMWare-v23.1-Preview1-x86_64-io.ova"  # optional
 $spec = "D:\try-fydeos\dev\amd64-vmware-io.json"
 D:\try-fydeos\dev\tryfydeos.exe doctor --spec $spec
 D:\try-fydeos\dev\tryfydeos.exe prepare --spec $spec
@@ -58,7 +60,10 @@ runtime `runtime\` and spec `factory\amd64-vmware-io.json` next to the exe;
 
 `Try FydeOS.exe` is the start menu of the Mac app on Win32: cores and memory
 steppers, full screen and microphone switches, factory reset behind a
-confirmation, the last-run status and Launch with the unpack progress. About,
+confirmation, the last-run status and Launch with the download and
+conversion progress. When the release API lists a newer image than the one
+the VM was converted from, the reset section says so and the reset
+confirmation names the version a reset installs. About,
 Open Logs Folder and Quit are in the window (system) menu. The window hides
 while FydeOS runs and comes back when QEMU exits; closing it while a VM runs
 quits through the shutdown ladder. A second start brings the running
@@ -82,12 +87,10 @@ checkout builds the exe with its icon.
 `dist/Try FydeOS-<version>.exe` and `<that>.sha256`. The version is
 `ProductVersion` in `versioninfo.rc`, the one source the Makefile reads
 (`appVersion` in `cmd/TryFydeOSApp/main_windows.go` must still match it).
-It needs `make win-runtime` and the factory `.zst` named in
-`factory/amd64-vmware-io.json`. The packer refuses an image whose size or
-sha256 differs from the spec. Sizes for 0.1.0: GUI exe 4.4 MB, runtime.zip
-44.3 MB (191 files, 120.5 MB unpacked), image.zst 1604.0 MB, so 1652.8 MB in
-total. The zip leaves out the console QEMU, qemu-img and the firmware for
-other architectures. Packing takes about 11 s on the workstation.
+It needs `make win-runtime` and `factory/amd64-vmware-io.json`; the exe
+carries no image. Sizes for 0.1.0: GUI exe 7.5 MB, runtime.zip 43.5 MB (171
+files, 120.4 MB unpacked), so 51.0 MB in total. The zip leaves out the
+console QEMU, qemu-img and the firmware for other architectures.
 
 Layout: the payload starts at the PE overlay start, which is the end of the
 last section's raw data (or of the COFF symbol table), rounded to
@@ -95,29 +98,23 @@ FileAlignment. It is never located from the end of the file, so an
 Authenticode table appended later does not move it. At that offset:
 `TRYFYDEOS-PAYLOAD-1`, a little-endian u32 index length, and the index JSON
 `{"entries":[{"name","offset","length","sha256"}]}` with offsets from the
-overlay start. Then come the entries `runtime.zip`, `image.zst` and
-`spec.json`. The packer refuses an exe that already has trailing data or a
-certificate table, so sign after packing.
+overlay start. Then come the entries `runtime.zip` and `spec.json`. The
+packer refuses an exe that already has trailing data or a certificate
+table, so sign after packing.
 
 Packaged and development builds:
 
-- **No payload (development build):** nothing changes. The runtime and spec
-  come from next to the exe, or from the `TRY_FYDEOS_*` overrides.
+- **No payload (development build):** the runtime and spec come from next
+  to the exe, or from the `TRY_FYDEOS_*` overrides.
 - **With a payload:**
   - The spec is read from the payload.
-  - Launch streams `image.zst` from the exe straight into `disk.raw`.
   - The first Launch (or `tryfydeos prepare`) extracts `runtime.zip` into
     `%LOCALAPPDATA%\Try FydeOS\runtime\<first 12 hex of its sha256>\`. It
     extracts into a temporary directory, then renames it; a `.complete`
     file marks a finished extraction. While it extracts, the start menu
     shows "Preparing FydeOS…".
-  - Each payload entry is checked against its sha256 when read, and the
-    image also against the spec's sha256 and size. A mismatch fails the
-    unpack before the disk counts as prepared (this check now applies to
-    development builds too).
-  - `TRY_FYDEOS_RUNTIME`, `TRY_FYDEOS_SPEC` and `TRY_FYDEOS_FACTORY_IMAGE`
-    still win when set; the image comes from the override, else the
-    payload.
+  - Each payload entry is checked against its sha256 when read.
+  - `TRY_FYDEOS_RUNTIME` and `TRY_FYDEOS_SPEC` still win when set.
   - A newer exe brings its own runtime directory next to the old one, and
     the VM is not touched. Old directories are not removed automatically;
     delete `%LOCALAPPDATA%\Try FydeOS\runtime\` while the app is closed to
@@ -125,14 +122,48 @@ Packaged and development builds:
 - `tryfydeos doctor --exe "<path>\Try FydeOS-0.1.0.exe"` lists the payload
   entries and says whether the runtime is extracted yet.
 
-### Fresh-user test on the NUC (2026-10-27)
+## FydeOS image
 
-Setup: Windows 10 IoT Enterprise LTSC 21H2 (19044), Intel NUC with 4 threads
-and 16 GB, Defender real-time protection on, no exclusions for the test
-directory. The exe carried the Mark of the Web (`Zone.Identifier`,
-ZoneId=3). It was started with `LOCALAPPDATA` pointing at an empty
-directory and no `TRY_FYDEOS_*` overrides, from the desktop session through
-ShellExecute.
+Both builds prepare a new VM the same way:
+
+1. **Choose the image.** `TRY_FYDEOS_FACTORY_IMAGE` names a local `.ova` or
+   VMware `.zip`, used as is (no download, no hash check); the spec is still
+   looked for next to it unless `TRY_FYDEOS_SPEC` is set. Otherwise the
+   launcher asks the release API in the spec (`release.api`, board
+   `release.board`, 5 s timeout, User-Agent `Try FydeOS/<version>`) and takes
+   its entry when the checksum differs from the pinned `image`, else the
+   pinned image. An unreachable or malformed API answer is logged and the
+   pinned image is used.
+2. **Download** into `%LOCALAPPDATA%\Try FydeOS\images\<file name>`, unless
+   a file of that name and the expected size is there. The transfer goes
+   to `<file>.part`, resumes with an HTTP range after an interruption, and
+   is checked against the sha256 once complete; a mismatch deletes the part.
+   It needs the image size plus 10 GiB free. The status line reads
+   "Downloading FydeOS… N%".
+3. **Convert** the container's VMDK into the sparse `disk.raw`, skipping
+   all-zero grains ("Converting FydeOS… N%", 10 GiB free needed). The
+   published disk is the FydeOS image followed by zeros up to 50 GiB; the
+   launcher cuts it at the end of the image's GPT (alternate header LBA + 1
+   sectors) and refuses a disk with data beyond that, then grows the file
+   to `diskBytes` (64 GiB, sparse). `metadata.json` records the image's
+   url, file name, sha256, version and that length (`rawBytes`).
+
+Downloaded images stay in `images\` so a factory reset converts again
+without a download. `tryfydeos doctor` prints the pinned image, the files
+in `images\` and the release API's current entry.
+
+### Fresh-user test on the NUC
+
+Setup of the 2026-10-27 test (exe with the image inside, 1.65 GB): Windows
+10 IoT Enterprise LTSC 21H2 (19044), Intel NUC with 4 threads and 16 GB,
+Defender real-time protection on, no exclusions for the test directory.
+The exe carried the Mark of the Web (`Zone.Identifier`, ZoneId=3). It was
+started with `LOCALAPPDATA` pointing at an empty directory and no
+`TRY_FYDEOS_*` overrides, from the desktop session through ShellExecute.
+The 51 MB exe that downloads the image was tested on 2026-11-02 from the
+desktop session through the scheduled task, without the Mark of the Web
+and with the runtime already extracted, so the prompt and extraction
+numbers below are still those of the 2026-10-27 run.
 
 - **The prompt is the classic "Open File - Security Warning", not
   SmartScreen's "Windows protected your PC".** Its text: "The publisher could
@@ -140,29 +171,35 @@ ShellExecute.
   Publisher: Unknown Publisher, buttons Run / Cancel, checkbox "Always ask
   before opening this file". The SmartScreen endpoints were reachable, and
   smartscreen.exe ran during the delay.
-- **First start:** 10.5 s from the double-click to the prompt. Then
-  **14.9 s from Run to the start menu**: Windows checks the 1.65 GB file
-  before it creates the process; the app itself is up within 0.4 s of
-  process start.
-- **Second start with the Mark of the Web still present:** the prompt again
-  after 10.3 s, so the delay is not cached. Run with "Always ask" unchecked
-  (which removes the Mark of the Web) brought the start menu up in under
-  0.3 s.
-- **Starts without the Mark of the Web:** 0.2 s from ShellExecute to the
-  start menu.
+- **First start:** to be measured (with the 1.65 GB exe: 10.5 s from the
+  double-click to the prompt, then 14.9 s from Run to the start menu while
+  Windows checked the file; the app itself is up within 0.4 s of process
+  start).
+- **Second start with the Mark of the Web still present:** to be measured
+  (with the 1.65 GB exe the prompt came again after 10.3 s; Run with
+  "Always ask" unchecked removes the Mark of the Web).
+- **Starts without the Mark of the Web:** to be measured (0.2 s before).
 - **First Launch** (4 cores, 8 GB):
-  - Runtime extracted in 1.2 s: 192 files, 120.5 MB on disk.
-  - Image unpacked from the exe in 20.0 s, including the sha256 check.
-  - QEMU started 22 s after the click, QMP ready 10 s later.
-  - The OOBE frame appeared about 1 min 47 s after the click, the Terms of
-    Service page at about 2 min.
+  - Runtime extracted in 1.2 s: 192 files, 120.5 MB on disk (2026-10-27).
+  - Image download (1.91 GB) and its sha256 check: 154.2 s on the NUC's
+    link (12.4 MB/s average), 2026-11-02; the start menu showed
+    "Downloading FydeOS… NN%" with the progress bar.
+  - Conversion into `disk.raw`: 21.7 s (image length 7,314,946,560 bytes
+    from the GPT; the workstation converts the same OVA in 27 s).
+  - QEMU started within 1 s of the conversion, QMP ready 10 s later, the
+    OOBE Terms of Service page 147 s after that; 3 min 7 s from the click
+    to QMP ready. `disk.raw` is sparse: 4.3 GB allocated one minute into
+    the first boot, 4.8 GB after two boots.
 - **Quit from the window menu while FydeOS runs:** the ladder shut the guest
-  down in 14-17 s (`guest-shutdown`, exit 0), then the app exited.
-- **Restart and Launch:** no extraction, no unpack, QEMU 0.2 s after the
-  click.
-- **Factory reset, then Launch:** re-unpacked from the exe in 20.5 s, the
-  runtime was not extracted again, and the guest booted to the fresh OOBE
-  language screen.
+  down in 14-17 s (`guest-shutdown`, exit 0), then the app exited
+  (2026-10-27).
+- **Restart and Launch:** no extraction, no download, no conversion; QEMU
+  0.2 s after the click (2026-10-27).
+- **Second Launch** (2026-11-02): the release check found the installed
+  image current (no update notice), no download and no conversion, QMP
+  ready 10 s after the click.
+- **Factory reset, then Launch:** converts again from `images\` without a
+  download: to be measured.
 
 ## Deviations from docs/windows/design.md and the Mac app
 
@@ -176,9 +213,9 @@ ShellExecute.
 - Sleep handling sits on the start menu window, not a message-only window:
   message-only windows receive no broadcasts such as WM_POWERBROADCAST. The
   window also registers for suspend/resume notifications (Modern Standby).
-- Unpack progress shows as on the Mac: the button says "Preparing FydeOS…",
-  the status line "Unpacking FydeOS… N%" and a progress bar sits under the
-  button; core reports progress in 10 % steps.
+- Preparation progress: the button says "Preparing FydeOS…", the status
+  line "Downloading FydeOS… N%" and then "Converting FydeOS… N%", and a
+  progress bar sits under the button; core reports progress in 1 % steps.
 - Exit descriptions read "exit code N, reason" (the Mac shows "exit code N").
 - A fresh start shows the newest run's outcome in the status line (the run
   record now keeps `shutdownRequest`); the Mac starts at "Not running".

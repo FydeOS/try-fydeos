@@ -3,6 +3,7 @@ package core
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -107,10 +108,18 @@ func extractFile(f *zip.File, path string) error {
 	return out.Close()
 }
 
+// PrepareStage names the slow steps of preparing a workspace.
+type PrepareStage int
+
+const (
+	StageDownloading PrepareStage = iota + 1
+	StageConverting
+)
+
 // PrepareWorkspace extracts the runtime if needed and prepares ws from the
-// factory image; say gets one line per slow step.
+// FydeOS image, downloading it first if needed; say gets one line per slow step.
 func (l *Locations) PrepareWorkspace(ws *Workspace, lock *StorageLock, say func(string),
-	progress func(written, total int64)) (*Metadata, *FactorySpec, error) {
+	progress func(stage PrepareStage, done, total int64)) (*Metadata, *FactorySpec, error) {
 	start := time.Now()
 	if done, err := l.EnsureRuntime(); err != nil {
 		return nil, nil, fmt.Errorf("extracting the runtime into %s: %w", l.Runtime, err)
@@ -122,23 +131,25 @@ func (l *Locations) PrepareWorkspace(ws *Workspace, lock *StorageLock, say func(
 		return nil, nil, err
 	}
 	if ws.IsPrepared() {
-		m, err := ws.Prepare(lock, spec, nil, "", nil)
+		m, err := ws.Prepare(lock, spec, "", FactoryRecord{}, "", nil)
 		return m, spec, err
 	}
-	image, err := l.OpenFactoryImage(spec)
+	stage := func(s PrepareStage) func(done, total int64) {
+		if progress == nil {
+			return nil
+		}
+		return func(done, total int64) { progress(s, done, total) }
+	}
+	container, record, err := l.FactoryContainer(context.Background(), spec, say, stage(StageDownloading))
 	if err != nil {
 		return nil, nil, err
 	}
-	defer image.Close()
-	if image.Size != spec.Image.Bytes {
-		return nil, nil, fmt.Errorf("%s is %d bytes, the spec says %d", image.Name, image.Size, spec.Image.Bytes)
-	}
-	say(fmt.Sprintf("unpacking %s into %s (%d bytes)", image.Name, ws.Disk(), spec.Image.RawBytes))
+	say(fmt.Sprintf("converting %s into %s", container, ws.Disk()))
 	start = time.Now()
-	m, err := ws.Prepare(lock, spec, image, l.VarsTemplate(), progress)
+	m, err := ws.Prepare(lock, spec, container, record, l.VarsTemplate(), stage(StageConverting))
 	if err != nil {
 		return nil, nil, err
 	}
-	say(fmt.Sprintf("unpacked in %.1f s", time.Since(start).Seconds()))
+	say(fmt.Sprintf("converted in %.1f s (FydeOS image %d bytes)", time.Since(start).Seconds(), m.Factory.RawBytes))
 	return m, spec, nil
 }

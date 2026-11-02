@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-const fixtureBytes = 8 << 20
+const fixtureBytes = 16 << 20
 
 func golden(t *testing.T) string {
 	t.Helper()

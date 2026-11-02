@@ -44,18 +44,14 @@ func TestDiscoverLocations(t *testing.T) {
 	env["TRY_FYDEOS_WORKSPACE"] = "/env/vm"
 	env["TRY_FYDEOS_FORWARDS"] = "2202:22, 8080:80"
 	env["TRY_FYDEOS_RUNTIME"] = "/env/runtime"
-	env["TRY_FYDEOS_FACTORY_IMAGE"] = "/images/x.bin.zst"
+	env["TRY_FYDEOS_FACTORY_IMAGE"] = "/images/x.ova"
 	l, err = DiscoverLocations(getenv, "/app", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if l.Workspace != "/env/vm" || l.Runtime != "/env/runtime" || l.Spec != filepath.Join("/images", SpecFileName) ||
+	if l.Workspace != "/env/vm" || l.Runtime != "/env/runtime" || l.Spec != filepath.Join("/images", SpecFileName) || l.FactoryImageOverride != "/images/x.ova" ||
 		!reflect.DeepEqual(l.Forwards, []HostForward{{2202, 22}, {8080, 80}}) {
 		t.Fatalf("environment %+v", l)
-	}
-	spec := &FactorySpec{Image: FactoryImage{File: "x.bin.zst"}}
-	if got := l.FactoryImageCandidates(spec); !reflect.DeepEqual(got, []string{"/images/x.bin.zst", filepath.Join("/images", "x.bin.zst")}) {
-		t.Fatalf("candidates %v", got)
 	}
 
 	env["TRY_FYDEOS_SPEC"] = "/specs/s.json"

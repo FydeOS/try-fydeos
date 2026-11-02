@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,9 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
-
-	"tryfydeos.io/windows/internal/payload"
+	"tryfydeos.io/windows/internal/vmdk"
 )
 
 type Metadata struct {
@@ -169,11 +168,16 @@ func (w *Workspace) LoadMetadata() (*Metadata, error) {
 	return &m, nil
 }
 
-// Prepare unpacks the zstd factory image into a sparse disk of spec.DiskBytes
-// and copies the vars template. Idempotent: a prepared workspace is left alone
-// and image may be nil.
-func (w *Workspace) Prepare(lock *StorageLock, spec *FactorySpec, image *ImageSource, varsTemplate string,
-	progress func(written, total int64)) (*Metadata, error) {
+// workReserve is the free space kept for converting the image and for the
+// guest's first writes; a variable so that tests do not depend on the host.
+var workReserve int64 = 10 << 30
+
+// Prepare converts the disk of container (.ova or .zip) into a sparse disk of
+// spec.DiskBytes and copies the vars template; record is stored in the
+// metadata with the image's length. Idempotent: a prepared workspace is left
+// alone and container may be empty.
+func (w *Workspace) Prepare(lock *StorageLock, spec *FactorySpec, container string, record FactoryRecord, varsTemplate string,
+	progress func(done, total int64)) (*Metadata, error) {
 	if lock == nil || lock.Path != w.LockFile() {
 		return nil, errors.New("prepare needs the workspace lock")
 	}
@@ -184,23 +188,22 @@ func (w *Workspace) Prepare(lock *StorageLock, spec *FactorySpec, image *ImageSo
 		}
 		return m, nil
 	}
-	if image == nil {
-		return nil, errors.New("prepare needs the factory image")
+	if container == "" {
+		return nil, errors.New("prepare needs the FydeOS image")
 	}
 	for _, p := range []string{w.MetadataFile(), w.Disk(), w.EFIVars(), w.stagingDisk()} {
 		os.Remove(p)
 	}
-	raw := spec.Image.RawBytes
 	if _, free, err := VolumeInfo(w.Dir); err != nil {
 		return nil, err
-	} else if free < raw+(1<<30) {
-		return nil, fmt.Errorf("not enough free space: %.1f GB needed, %.1f GB available", float64(raw+(1<<30))/1e9, float64(free)/1e9)
+	} else if free < workReserve {
+		return nil, fmt.Errorf("not enough free space: %.1f GB needed, %.1f GB available", float64(workReserve)/1e9, float64(free)/1e9)
 	}
 	if err := copyFile(varsTemplate, w.EFIVars()); err != nil {
 		return nil, err
 	}
-	in := payload.NewVerifier(image, image.Name, spec.Image.Bytes, spec.Image.SHA256)
-	if err := unpackSparse(in, image.Name, w.stagingDisk(), raw, progress); err != nil {
+	raw, err := convertSparse(container, w.stagingDisk(), spec.DiskBytes, progress)
+	if err != nil {
 		os.Remove(w.stagingDisk())
 		return nil, err
 	}
@@ -210,9 +213,10 @@ func (w *Workspace) Prepare(lock *StorageLock, spec *FactorySpec, image *ImageSo
 	if err := os.Truncate(w.Disk(), spec.DiskBytes); err != nil {
 		return nil, err
 	}
+	record.RawBytes = raw
 	m := &Metadata{
 		Schema:    1,
-		Factory:   FactoryRecord{File: spec.Image.File, SHA256: spec.Image.SHA256, RawBytes: raw, Version: spec.Image.Version},
+		Factory:   record,
 		DiskBytes: spec.DiskBytes,
 		MAC:       RandomMAC(),
 		Created:   UTCTimestamp(time.Now()),
@@ -223,64 +227,86 @@ func (w *Workspace) Prepare(lock *StorageLock, spec *FactorySpec, image *ImageSo
 	return m, nil
 }
 
-const unpackBlock = 1 << 20
+type countingReader struct {
+	r io.Reader
+	n int64
+}
 
-// unpackSparse decompresses into a file marked sparse and seeks over all-zero
-// blocks, so the disk occupies only its data. The decoder checks the frame
-// checksums; the size check catches a truncated or foreign image. in is read
-// to its end so that a verifying reader gets to report a mismatch.
-func unpackSparse(in io.Reader, image, output string, rawBytes int64, progress func(int64, int64)) error {
-	dec, err := zstd.NewReader(in, zstd.WithDecoderConcurrency(1))
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
+}
+
+// convertSparse decodes the container's VMDK into a file marked sparse,
+// skipping all-zero grains, and cuts it to the FydeOS image inside: the disk
+// is the image followed by zeros, and the image ends with its GPT's
+// alternate header. Returns that length.
+func convertSparse(container, output string, diskBytes int64, progress func(done, total int64)) (int64, error) {
+	disk, err := vmdk.FindDisk(container)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	defer dec.Close()
+	rc, size, err := vmdk.OpenMember(container, disk)
+	if err != nil {
+		return 0, err
+	}
+	defer rc.Close()
 	out, err := os.OpenFile(output, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer out.Close()
 	if err := setSparse(out); err != nil {
-		return fmt.Errorf("marking %s sparse: %w", output, err)
+		return 0, fmt.Errorf("marking %s sparse: %w", output, err)
 	}
-	buf := make([]byte, unpackBlock)
-	zero := make([]byte, unpackBlock)
-	var off int64
+	in := &countingReader{r: rc}
+	var zero []byte
+	var end int64
 	lastStep := int64(-1)
-	for {
-		n, err := io.ReadFull(dec, buf)
-		if n > 0 {
-			if off+int64(n) > rawBytes {
-				return fmt.Errorf("%s unpacks to more than %d bytes, the size the spec gives", image, rawBytes)
-			}
-			if !bytes.Equal(buf[:n], zero[:n]) {
-				if _, werr := out.WriteAt(buf[:n], off); werr != nil {
-					return werr
-				}
-			}
-			off += int64(n)
-			if progress != nil && off*10/rawBytes != lastStep {
-				lastStep = off * 10 / rawBytes
-				progress(off, rawBytes)
-			}
+	info, err := vmdk.Decode(in, func(off int64, data []byte) error {
+		if len(zero) < len(data) {
+			zero = make([]byte, len(data))
 		}
-		if err == io.EOF || err == io.ErrUnexpectedEOF {
-			break
+		if !bytes.Equal(data, zero[:len(data)]) {
+			if _, err := out.WriteAt(data, off); err != nil {
+				return err
+			}
+			last := len(data)
+			for data[last-1] == 0 {
+				last--
+			}
+			end = max(end, off+int64(last))
 		}
-		if err != nil {
-			return fmt.Errorf("unpacking %s: %w", image, err)
+		if progress != nil && size > 0 && in.n*100/size != lastStep {
+			lastStep = in.n * 100 / size
+			progress(min(in.n, size), size)
 		}
+		return nil
+	})
+	if err != nil {
+		return 0, fmt.Errorf("converting %s: %s: %w", container, disk, err)
 	}
-	if off != rawBytes {
-		return fmt.Errorf("%s unpacked to %d bytes, spec says %d", image, off, rawBytes)
+	header := make([]byte, 512)
+	if _, err := out.ReadAt(header, 512); err != nil || string(header[:8]) != "EFI PART" {
+		return 0, fmt.Errorf("%s: no GPT on the disk", container)
 	}
-	if _, err := io.Copy(io.Discard, in); err != nil {
-		return err
+	raw := (int64(binary.LittleEndian.Uint64(header[32:])) + 1) * 512
+	switch {
+	case raw <= 0 || raw > info.Capacity:
+		return 0, fmt.Errorf("%s: the GPT ends at %d, outside the %d-byte disk", container, raw, info.Capacity)
+	case end > raw:
+		return 0, fmt.Errorf("%s: foreign image: data beyond the GPT (at %d, the GPT ends at %d)", container, end, raw)
+	case raw > diskBytes:
+		return 0, fmt.Errorf("%s: the image is %d bytes, more than the %d-byte VM disk", container, raw, diskBytes)
 	}
-	if err := out.Truncate(off); err != nil {
-		return err
+	if err := out.Truncate(raw); err != nil {
+		return 0, err
 	}
-	return out.Close()
+	if progress != nil && size > 0 {
+		progress(size, size)
+	}
+	return raw, out.Close()
 }
 
 func copyFile(src, dst string) error {

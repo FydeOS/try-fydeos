@@ -5,141 +5,182 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/klauspost/compress/zstd"
 )
 
-// testImage writes a zstd image with data, a run of zero blocks and a short tail.
-func testImage(t *testing.T) (string, *FactorySpec, []byte) {
-	raw := bytes.Repeat([]byte("FydeOS"), 300000)
-	raw = append(raw, make([]byte, 5*unpackBlock+123)...)
-	raw = append(raw, []byte("tail")...)
-	dir := t.TempDir()
-	image := filepath.Join(dir, "image.bin.zst")
-	f, _ := os.Create(image)
-	enc, _ := zstd.NewWriter(f)
-	enc.Write(raw)
-	enc.Close()
-	f.Close()
-	sum := sha256.Sum256(raw)
-	st, _ := os.Stat(image)
-	zst, _ := SHA256File(image)
-	spec := &FactorySpec{Schema: 1, DiskBytes: 64 << 20, Board: "test", Image: FactoryImage{
-		File: "image.bin.zst", Bytes: st.Size(), SHA256: zst,
-		RawBytes: int64(len(raw)), RawSHA256: hex.EncodeToString(sum[:]), Version: "test 1",
-	}}
-	vars := filepath.Join(dir, "vars.fd")
+const fixtureRawBytes = 8<<20 - 32<<10
+
+func init() { workReserve = 0 }
+
+func fixture(name string) string { return filepath.Join("..", "vmdk", "testdata", name) }
+
+// testSpec returns a spec for the vmdk fixtures and a vars template.
+func testSpec(t *testing.T) (*FactorySpec, string) {
+	spec := &FactorySpec{Schema: 2, DiskBytes: 64 << 20, Board: "test",
+		Image:   FactoryImage{URL: "https://example.invalid/test.ova", Bytes: 1, SHA256: strings.Repeat("ab", 32), Version: "test 1"},
+		Release: ReleaseSource{API: "https://example.invalid/api", Board: "test"}}
+	vars := filepath.Join(t.TempDir(), "vars.fd")
 	os.WriteFile(vars, []byte("vars"), 0o600)
-	return image, spec, raw
+	return spec, vars
 }
 
-func openImage(t *testing.T, path string) *ImageSource {
-	f, err := os.Open(path)
+func fixtureDiskSHA256(t *testing.T) string {
+	b, err := os.ReadFile(fixture("raw.sha256"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { f.Close() })
-	st, _ := f.Stat()
-	return &ImageSource{Name: path, Size: st.Size(), ReadCloser: f}
+	return strings.TrimSpace(string(b))
 }
 
-func TestPrepareRejectsImageHashMismatch(t *testing.T) {
-	image, spec, _ := testImage(t)
-	vars := filepath.Join(filepath.Dir(image), "vars.fd")
-	spec.Image.SHA256 = strings.Repeat("0", 64)
+func TestPrepareConvertsSparseAndIsIdempotent(t *testing.T) {
+	for _, container := range []string{fixture("test.ova"), fixture("test.zip")} {
+		spec, vars := testSpec(t)
+		ws := &Workspace{Dir: filepath.Join(t.TempDir(), "VM", "v1")}
+		lock, err := ws.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var calls int
+		var last [2]int64
+		record := FactoryRecord{URL: spec.Image.URL, FileName: "test.ova", SHA256: spec.Image.SHA256, Version: "test 1"}
+		m, err := ws.Prepare(lock, spec, container, record, vars, func(done, total int64) { calls++; last = [2]int64{done, total} })
+		if err != nil {
+			t.Fatalf("%s: %v", container, err)
+		}
+		record.RawBytes = fixtureRawBytes
+		if calls == 0 || last[0] != last[1] || last[1] <= 0 || m.DiskBytes != spec.DiskBytes || m.Factory != record {
+			t.Fatalf("%s: metadata %+v, progress calls %d, last %v", container, m, calls, last)
+		}
+		st, err := os.Stat(ws.Disk())
+		if err != nil || st.Size() != spec.DiskBytes {
+			t.Fatalf("disk %v %v", st, err)
+		}
+		data, _ := os.ReadFile(ws.Disk())
+		sum := sha256.Sum256(data[:16<<20])
+		if hex.EncodeToString(sum[:]) != fixtureDiskSHA256(t) || !bytes.Equal(data[16<<20:], make([]byte, len(data)-16<<20)) {
+			t.Fatalf("%s: disk content differs from the fixture", container)
+		}
+		if v, _ := os.ReadFile(ws.EFIVars()); string(v) != "vars" {
+			t.Fatalf("vars %q", v)
+		}
+		if allocated := diskAllocated(t, ws.Disk()); allocated >= 4<<20 {
+			t.Fatalf("disk not sparse: %d bytes allocated", allocated)
+		}
+		before, _ := os.ReadFile(ws.MetadataFile())
+		m2, err := ws.Prepare(lock, spec, "", FactoryRecord{}, "/nonexistent", nil)
+		after, _ := os.ReadFile(ws.MetadataFile())
+		if err != nil || m2.MAC != m.MAC || !bytes.Equal(before, after) {
+			t.Fatalf("second prepare changed something: %v", err)
+		}
+
+		_, run, err := ws.NewRunDirectory(time.Now())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := ws.Reset(lock); err != nil {
+			t.Fatal(err)
+		}
+		if ws.IsPrepared() {
+			t.Fatal("prepared after reset")
+		}
+		if s, _ := ws.State(); s != WorkspaceMarked {
+			t.Fatalf("state after reset %v", s)
+		}
+		if _, err := os.Stat(run); err != nil {
+			t.Fatalf("reset removed the runs: %v", err)
+		}
+		lock.Release()
+	}
+}
+
+func TestPrepareRejects(t *testing.T) {
+	for name, tc := range map[string]struct {
+		container string
+		diskBytes int64
+		want      string
+	}{
+		"data beyond the GPT": {fixture("beyond.ova"), 64 << 20, "data beyond the GPT"},
+		"disk too small":      {fixture("test.ova"), fixtureRawBytes - 512, "more than the"},
+		"not a container":     {fixture("stream.vmdk"), 64 << 20, "unsupported container"},
+		"no free space":       {fixture("test.ova"), 64 << 20, "not enough free space"},
+	} {
+		if name == "no free space" {
+			workReserve = 1 << 62
+		}
+		spec, vars := testSpec(t)
+		spec.DiskBytes = tc.diskBytes
+		ws := &Workspace{Dir: t.TempDir()}
+		lock, err := ws.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ws.Prepare(lock, spec, tc.container, FactoryRecord{}, vars, nil); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %v", name, err)
+		}
+		workReserve = 0
+		if ws.IsPrepared() {
+			t.Errorf("%s: prepared", name)
+		}
+		for _, p := range []string{ws.Disk(), ws.stagingDisk()} {
+			if _, err := os.Stat(p); err == nil {
+				t.Errorf("%s: %s left behind", name, p)
+			}
+		}
+		lock.Release()
+	}
+}
+
+// TestPrepareCrossCheck converts a real image and compares the installed
+// disk with a qemu-img conversion of the same container over the image's
+// length: TRY_FYDEOS_PREPARE_CROSSCHECK=<container>:<rawfile>. Set TMPDIR
+// to a disk with room for the converted image.
+func TestPrepareCrossCheck(t *testing.T) {
+	env := os.Getenv("TRY_FYDEOS_PREPARE_CROSSCHECK")
+	if env == "" {
+		t.Skip("TRY_FYDEOS_PREPARE_CROSSCHECK not set")
+	}
+	container, rawFile, ok := strings.Cut(env, ":")
+	if !ok {
+		t.Fatalf("TRY_FYDEOS_PREPARE_CROSSCHECK=%q, want <container>:<rawfile>", env)
+	}
+	spec, vars := testSpec(t)
+	spec.DiskBytes = 64 << 30
 	ws := &Workspace{Dir: t.TempDir()}
 	lock, err := ws.Open()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer lock.Release()
-	if _, err := ws.Prepare(lock, spec, openImage(t, image), vars, nil); err == nil || !strings.Contains(err.Error(), "sha256") {
-		t.Fatalf("prepare with a wrong image hash: %v", err)
-	}
-	if ws.IsPrepared() {
-		t.Fatal("prepared despite the hash mismatch")
-	}
-	if _, err := os.Stat(ws.stagingDisk()); err == nil {
-		t.Fatal("staging disk left behind")
-	}
-}
-
-func TestPrepareUnpacksSparseAndIsIdempotent(t *testing.T) {
-	image, spec, raw := testImage(t)
-	vars := filepath.Join(filepath.Dir(image), "vars.fd")
-	ws := &Workspace{Dir: filepath.Join(t.TempDir(), "VM", "v1")}
-	lock, err := ws.Open()
+	start := time.Now()
+	m, err := ws.Prepare(lock, spec, container, FactoryRecord{}, vars, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer lock.Release()
-	var calls int
-	m, err := ws.Prepare(lock, spec, openImage(t, image), vars, func(w, total int64) { calls++ })
-	if err != nil {
-		t.Fatal(err)
-	}
-	if calls == 0 || m.DiskBytes != spec.DiskBytes || m.Factory.SHA256 != spec.Image.SHA256 || m.Factory.Version != "test 1" {
-		t.Fatalf("metadata %+v, progress calls %d", m, calls)
-	}
-	st, err := os.Stat(ws.Disk())
-	if err != nil || st.Size() != spec.DiskBytes {
-		t.Fatalf("disk %v %v", st, err)
-	}
-	data, _ := os.ReadFile(ws.Disk())
-	if !bytes.Equal(data[:len(raw)], raw) || !bytes.Equal(data[len(raw):], make([]byte, len(data)-len(raw))) {
-		t.Fatal("disk content differs from the image")
-	}
-	if v, _ := os.ReadFile(ws.EFIVars()); string(v) != "vars" {
-		t.Fatalf("vars %q", v)
-	}
-	if allocated := diskAllocated(t, ws.Disk()); allocated >= 4<<20 {
-		t.Fatalf("disk not sparse: %d bytes allocated", allocated)
-	}
-	before, _ := os.ReadFile(ws.MetadataFile())
-	m2, err := ws.Prepare(lock, spec, nil, "/nonexistent", nil)
-	after, _ := os.ReadFile(ws.MetadataFile())
-	if err != nil || m2.MAC != m.MAC || !bytes.Equal(before, after) {
-		t.Fatalf("second prepare changed something: %v", err)
-	}
-
-	if err := ws.Reset(lock); err != nil {
-		t.Fatal(err)
-	}
-	if ws.IsPrepared() {
-		t.Fatal("prepared after reset")
-	}
-	if s, _ := ws.State(); s != WorkspaceMarked {
-		t.Fatalf("state after reset %v", s)
-	}
-}
-
-func TestPrepareRejectsWrongSize(t *testing.T) {
-	image, spec, _ := testImage(t)
-	vars := filepath.Join(filepath.Dir(image), "vars.fd")
-	for _, delta := range []int64{-1, 1} {
-		s := *spec
-		s.Image.RawBytes += delta
-		ws := &Workspace{Dir: t.TempDir()}
-		lock, err := ws.Open()
+	t.Logf("prepared in %v: FydeOS image %d bytes, %d bytes allocated", time.Since(start), m.Factory.RawBytes, diskAllocated(t, ws.Disk()))
+	start = time.Now()
+	prefix := func(p string) string {
+		f, err := os.Open(p)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ws.Prepare(lock, &s, openImage(t, image), vars, nil); err == nil {
-			t.Errorf("delta %d: accepted", delta)
+		defer f.Close()
+		h := sha256.New()
+		if n, err := io.CopyBuffer(h, io.LimitReader(f, m.Factory.RawBytes), make([]byte, 4<<20)); err != nil || n != m.Factory.RawBytes {
+			t.Fatalf("%s: read %d of %d bytes: %v", p, n, m.Factory.RawBytes, err)
 		}
-		if _, err := os.Stat(ws.Disk()); err == nil {
-			t.Errorf("delta %d: disk left behind", delta)
-		}
-		if _, err := os.Stat(ws.stagingDisk()); err == nil {
-			t.Errorf("delta %d: staging disk left behind", delta)
-		}
-		lock.Release()
+		return hex.EncodeToString(h.Sum(nil))
 	}
+	got, want := prefix(ws.Disk()), prefix(rawFile)
+	t.Logf("hashed in %v", time.Since(start))
+	if got != want {
+		t.Fatalf("sha256 of the first %d bytes = %s, want %s (%s)", m.Factory.RawBytes, got, want, rawFile)
+	}
+	t.Logf("sha256 of the first %d bytes %s matches", m.Factory.RawBytes, got)
 }
 
 func TestOpenRefusesForeignAndLocks(t *testing.T) {

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -94,14 +95,11 @@ func (d *CoreDriver) run(o core.LaunchOptions, deliver func(Event)) error {
 		return err
 	}
 	defer lock.Release()
-	m, spec, err := loc.PrepareWorkspace(ws, lock, d.Log.Write, func(written, total int64) {
-		deliver(Event{Kind: EventPreparing, Bytes: written, Total: total})
+	m, _, err := loc.PrepareWorkspace(ws, lock, d.Log.Write, func(stage core.PrepareStage, done, total int64) {
+		deliver(Event{Kind: EventPreparing, Stage: stage, Bytes: done, Total: total})
 	})
 	if err != nil {
 		return err
-	}
-	if m.Factory.SHA256 != spec.Image.SHA256 {
-		d.Log.Write(fmt.Sprintf("note: this VM was prepared from factory %.12s; spec now pins %.12s", m.Factory.SHA256, spec.Image.SHA256))
 	}
 	for {
 		s, err := core.Launch(o, loc, ws, lock, m, d.Host, func(msg string) { d.Log.Write("run: " + msg) })
@@ -164,6 +162,35 @@ func (d *CoreDriver) ResumeAfterWake() {
 	if s := d.current(); s != nil {
 		s.ResumeAfterWake()
 	}
+}
+
+func (d *CoreDriver) CheckRelease(events func(Event)) {
+	go func() {
+		spec, err := d.Locations.LoadSpec()
+		if err != nil {
+			d.Log.Write("release check: " + err.Error())
+			return
+		}
+		r, err := core.FetchRelease(context.Background(), spec.Release.API, spec.Release.Board, d.Locations.AppVersion)
+		if err != nil {
+			d.Log.Write("release check: " + err.Error())
+			return
+		}
+		d.Log.Write(fmt.Sprintf("release check: %s %s (%s), sha256 %s", r.FileName, r.Version, r.ReleaseDate, r.SHA256))
+		d.Post(func() { events(Event{Kind: EventRelease, Release: r}) })
+	}()
+}
+
+func (d *CoreDriver) PreparedFactory() (core.FactoryRecord, bool) {
+	ws := d.Workspace()
+	if !ws.IsPrepared() {
+		return core.FactoryRecord{}, false
+	}
+	m, err := ws.LoadMetadata()
+	if err != nil {
+		return core.FactoryRecord{}, false
+	}
+	return m.Factory, true
 }
 
 func (d *CoreDriver) FactoryReset() error {

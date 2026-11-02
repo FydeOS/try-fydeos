@@ -24,6 +24,7 @@ const (
 	MicrophoneDetail      Key = "microphoneDetail"
 	FactoryReset          Key = "factoryReset"
 	FactoryResetDetail    Key = "factoryResetDetail"
+	UpdateAvailable       Key = "updateAvailable"
 	ResetButton           Key = "resetButton"
 	Launch                Key = "launch"
 	LaunchPreparing       Key = "launchPreparing"
@@ -34,6 +35,8 @@ const (
 	StatusNotRunningAfter Key = "statusNotRunningAfter"
 	StatusPreparing       Key = "statusPreparing"
 	StatusUnpacking       Key = "statusUnpacking"
+	StatusDownloading     Key = "statusDownloading"
+	StatusConverting      Key = "statusConverting"
 	StatusStarting        Key = "statusStarting"
 	StatusRunningSince    Key = "statusRunningSince"
 	StatusShuttingDown    Key = "statusShuttingDown"
@@ -46,6 +49,7 @@ const (
 	ErrorLaunchTitle      Key = "errorLaunchTitle"
 	ResetTitle            Key = "resetTitle"
 	ResetMessage          Key = "resetMessage"
+	ResetMessageUpdate    Key = "resetMessageUpdate"
 	ResetConfirm          Key = "resetConfirm"
 	ResetDone             Key = "resetDone"
 	ResetFailedTitle      Key = "resetFailedTitle"
@@ -77,6 +81,7 @@ var English = map[Key]string{
 	MicrophoneDetail:      "Optional. Apps in FydeOS can record from your microphone.",
 	FactoryReset:          "Factory reset",
 	FactoryResetDetail:    "Erase this VM and return it to factory settings.",
+	UpdateAvailable:       "FydeOS %s (%s) is available. Factory reset installs it.",
 	ResetButton:           "Reset FydeOS…",
 	Launch:                "Launch FydeOS",
 	LaunchPreparing:       "Preparing FydeOS…",
@@ -87,6 +92,8 @@ var English = map[Key]string{
 	StatusNotRunningAfter: "Not running. %s",
 	StatusPreparing:       "Preparing…",
 	StatusUnpacking:       "Unpacking FydeOS… %d%%",
+	StatusDownloading:     "Downloading FydeOS… %d%%",
+	StatusConverting:      "Converting FydeOS… %d%%",
 	StatusStarting:        "Starting…",
 	StatusRunningSince:    "Running since %s",
 	StatusShuttingDown:    "Shutting down…",
@@ -99,6 +106,7 @@ var English = map[Key]string{
 	ErrorLaunchTitle:      "Try FydeOS couldn’t start",
 	ResetTitle:            "Reset FydeOS to factory settings?",
 	ResetMessage:          "This permanently erases everything in this FydeOS virtual machine, including apps, files, accounts and settings. This cannot be undone.",
+	ResetMessageUpdate:    "Erase this VM and install FydeOS %s (%s)?",
 	ResetConfirm:          "Reset",
 	ResetDone:             "FydeOS has been reset.",
 	ResetFailedTitle:      "FydeOS couldn’t be reset",

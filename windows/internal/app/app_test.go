@@ -14,9 +14,10 @@ import (
 )
 
 type fakeDriver struct {
-	calls  []string
-	events func(Event)
-	reset  error
+	calls    []string
+	events   func(Event)
+	reset    error
+	prepared *core.FactoryRecord
 }
 
 func (f *fakeDriver) Launch(o core.LaunchOptions, events func(Event)) {
@@ -27,6 +28,16 @@ func (f *fakeDriver) ShutDown()           { f.calls = append(f.calls, "shutdown"
 func (f *fakeDriver) PauseForSleep()      { f.calls = append(f.calls, "pause") }
 func (f *fakeDriver) ResumeAfterWake()    { f.calls = append(f.calls, "resume") }
 func (f *fakeDriver) FactoryReset() error { f.calls = append(f.calls, "reset"); return f.reset }
+func (f *fakeDriver) CheckRelease(events func(Event)) {
+	f.calls = append(f.calls, "release")
+	f.events = events
+}
+func (f *fakeDriver) PreparedFactory() (core.FactoryRecord, bool) {
+	if f.prepared == nil {
+		return core.FactoryRecord{}, false
+	}
+	return *f.prepared, true
+}
 
 func newTestController() (*Controller, *fakeDriver, *[]string) {
 	d := &fakeDriver{}
@@ -48,9 +59,13 @@ func TestLaunchToShutdown(t *testing.T) {
 	if c.State().StatusText() != "Preparing…" || c.State().LaunchTitle() != "Preparing FydeOS…" || c.CanLaunch() || c.CanFactoryReset() {
 		t.Fatalf("preparing %+v", c.State())
 	}
-	d.events(Event{Kind: EventPreparing, Bytes: 42, Total: 100})
-	if got := c.State().StatusText(); got != "Unpacking FydeOS… 42%" {
-		t.Fatalf("unpacking %q", got)
+	d.events(Event{Kind: EventPreparing, Stage: core.StageDownloading, Bytes: 42, Total: 100})
+	if got := c.State().StatusText(); got != "Downloading FydeOS… 42%" {
+		t.Fatalf("downloading %q", got)
+	}
+	d.events(Event{Kind: EventPreparing, Stage: core.StageConverting, Bytes: 42, Total: 100})
+	if got := c.State().StatusText(); got != "Converting FydeOS… 42%" {
+		t.Fatalf("converting %q", got)
 	}
 	d.events(Event{Kind: EventStarting, Pid: 77})
 	if c.VMPid() != 77 || c.State().LaunchTitle() != "Launching FydeOS…" || c.State().StatusText() != "Starting…" {
@@ -76,7 +91,7 @@ func TestLaunchToShutdown(t *testing.T) {
 	if !reflect.DeepEqual(d.calls, []string{"launch", "shutdown"}) {
 		t.Fatalf("calls %v", d.calls)
 	}
-	if len(*log) != 6 {
+	if len(*log) != 7 {
 		t.Fatalf("state log %v", *log)
 	}
 }
@@ -176,6 +191,32 @@ func TestLastRunMessage(t *testing.T) {
 		if got := LastRunMessage(tc.r); got != tc.want {
 			t.Errorf("%+v: %q", tc.r, got)
 		}
+	}
+}
+
+func TestUpdateRelease(t *testing.T) {
+	c, d, _ := newTestController()
+	var changes int
+	c.OnReleaseChange = func() { changes++ }
+	c.CheckRelease()
+	if c.UpdateRelease() != nil || d.calls[0] != "release" {
+		t.Fatalf("before the answer: %+v %v", c.UpdateRelease(), d.calls)
+	}
+	r := &core.Release{Version: "23.2", ReleaseDate: "2026-12-01", SHA256: strings.Repeat("b", 64)}
+	d.events(Event{Kind: EventRelease, Release: r})
+	if changes != 1 || c.UpdateRelease() != nil {
+		t.Fatalf("unprepared VM: changes %d, update %+v", changes, c.UpdateRelease())
+	}
+	d.prepared = &core.FactoryRecord{SHA256: strings.Repeat("a", 64)}
+	if c.UpdateRelease() != r {
+		t.Fatal("no update for a VM from another image")
+	}
+	if got := L(UpdateAvailable, r.Version, r.ReleaseDate); got != "FydeOS 23.2 (2026-12-01) is available. Factory reset installs it." {
+		t.Fatalf("notice %q", got)
+	}
+	d.prepared.SHA256 = r.SHA256
+	if c.UpdateRelease() != nil {
+		t.Fatal("update for a VM from the same image")
 	}
 }
 

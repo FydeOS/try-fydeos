@@ -20,7 +20,9 @@ Decisions by Wei (2026-10-27):
   fallback (`make win-runtime WIN_RUNTIME=omarchy`).
 - Image: bundled in the distributable like the DMG; an online download
   comes later, once FydeOS publishes a raw image (the download page only
-  serves the VMware OVA today) (D-W2).
+  serves the VMware OVA today) (D-W2). Revised 2026-11-02: the launcher
+  downloads the published VMware OVA at the first Launch and converts its
+  VMDK itself, so the exe carries no image (milestone 6).
 - No code-signing certificate: the exe is unsigned, testers click through
   SmartScreen (D-W3).
 - UEFI only; FydeOS does not support legacy BIOS boot (D-W4).
@@ -172,9 +174,10 @@ pinned runtime in milestone 1.
   `GOOS=windows GOARCH=amd64`; icon and version block from
   `windows/versioninfo.rc` via `llvm-rc` + `llvm-cvtres` into a `.syso`.
 - `windows/internal/core` (unit-tested on Linux where possible): factory
-  spec, locations, workspace (zstd unpack with `klauspost/compress` into
-  a sparse NTFS file, size check, extend to `diskBytes`; per-VM EFI vars;
-  `.lock` via `LockFileEx`), VM config to argv, QMP client, session
+  spec, release API, resumable download, locations, workspace (VMDK
+  conversion with `internal/vmdk` into a sparse NTFS file, cut at the
+  image's GPT end, extend to `diskBytes`; per-VM EFI vars; `.lock` via
+  `LockFileEx`), VM config to argv, QMP client, session
   (start, QMP attach, shutdown ladder, run logs), host probe (WHPX
   present, hypervisor running, x86-64, NTFS).
 - `windows/cmd/tryfydeos`: console CLI, same verbs as the Mac CLI:
@@ -182,7 +185,8 @@ pinned runtime in milestone 1.
 - `windows/cmd/TryFydeOS`: the GUI exe (`-H windowsgui`). Start menu as a
   fixed-size Win32 window of the same cards as the Mac: processor cores
   and memory, full screen switch, factory reset behind a confirmation,
-  last-run status, Launch with unpack progress; Logs and Quit in a system
+  last-run status, Launch with download and conversion progress, a notice
+  when the release API lists a newer image; Logs and Quit in a system
   menu. Hidden while QEMU runs, shown again when it exits. DPI-aware
   (per-monitor v2) so the menu is crisp on scaled displays.
 - Supervision: the launcher joins a kill-on-close Job object before it
@@ -206,29 +210,54 @@ pinned runtime in milestone 1.
   `%LOCALAPPDATA%\Try FydeOS\Logs\TryFydeOS.log`. Hidden preferences in
   `%LOCALAPPDATA%\Try FydeOS\preferences.json` (`forwards`, `workspace`),
   env overrides `TRY_FYDEOS_FORWARDS`, `TRY_FYDEOS_WORKSPACE`,
-  `TRY_FYDEOS_FACTORY_IMAGE`.
+  `TRY_FYDEOS_FACTORY_IMAGE` (a local `.ova` or `.zip`). Downloaded
+  images: `%LOCALAPPDATA%\Try FydeOS\images\`.
 
 ### Factory image
 
-`factory/amd64-vmware-io.json`, same schema as the arm64 `spec.json`
-(`image.file/bytes/sha256/rawBytes/rawSha256/version`, `diskBytes` 64 GiB,
-`board`, `kernelCommandLine` facts). The `.zst` is produced with
-`zstd -T32 -19` (no `--long`, so the Go decoder's default window
-suffices) and lives in `factory/` on the workstation, excluded from git
-and from sync like the arm64 one.
+`factory/amd64-vmware-io.json`, schema 2: `image` pins the published
+download (`url`, `bytes`, `sha256` of the OVA, `version` text), `release`
+names the release API (`api`, `board` `amd64-vmware`), and `diskBytes`
+(64 GiB), `board` and the `kernelCommandLine` facts stay as before. Nothing
+is built or stored on the workstation.
 
-### Packaging (D-W2, D-W3, revised 2026-10-27)
+A new VM is prepared in three steps:
 
-One file for the user: `dist/Try FydeOS-<version>.exe` (about 1.7 GB),
+1. Choose: `TRY_FYDEOS_FACTORY_IMAGE` (a local `.ova`/`.zip`, no download,
+   no hash check); otherwise the release API's entry for the board when its
+   checksum differs from the pinned one, else the pinned image. The API
+   call has a 5 s timeout; any failure falls back to the pinned image. The
+   API gives no size, so the size of its download is read from a one-byte
+   range request.
+2. Download into `%LOCALAPPDATA%\Try FydeOS\images\<file name>` through a
+   `.part` file that resumes with `Range` (a 200 answer restarts it), then
+   check the sha256; a mismatch deletes the part. An existing file of the
+   expected size is used without a download. Needs the image size plus
+   10 GiB free.
+3. Convert the container's single VMDK (streamOptimized in the OVA,
+   monolithicSparse in a VMware zip) into `disk.raw`, writing only
+   non-zero grains into the sparse file. The published disk is 50 GiB:
+   `chromiumos_image.bin` followed by zeros. Its length is (GPT alternate
+   header LBA + 1) * 512 (7,314,946,560 bytes for v23.1 Preview1); a disk
+   with non-zero data beyond it is refused as foreign. The file is cut
+   there, then extended to `diskBytes`. Needs 10 GiB free.
+
+`metadata.json` records `factory` `{url, fileName, sha256, version,
+rawBytes}`. The app asks the release API once at start; when the prepared
+VM's `sha256` differs from the API's checksum, the reset section names the
+newer version and a factory reset installs it.
+
+### Packaging (D-W2, D-W3, revised 2026-11-02)
+
+One file for the user: `dist/Try FydeOS-<version>.exe` (about 51 MB),
 assembled on the workstation by `make win-dist`. It is the GUI exe with a
 payload appended after the PE image, the way self-extracting installers
-work, so the Go build stays small and the image is not linked in:
+work, so the Go build stays small:
 
 ```
 [PE image: Try FydeOS.exe]
 [payload header at the overlay start: magic "TRYFYDEOS-PAYLOAD-1", u32 index length, index JSON]
 [entry: runtime.zip]      trimmed runtime: bin\qemu-system-x86_64w.exe, bin\*.dll, bin\share\ (x86 firmware only), LICENSES\, provenance\
-[entry: image.zst]        the factory image as in factory/<board>.json
 [entry: spec.json]        factory/amd64-vmware-io.json
 ```
 
@@ -242,15 +271,13 @@ the exe or the `TRY_FYDEOS_*` overrides, as today.
 At run time: the index hash is checked at start; the runtime is extracted
 once into `%LOCALAPPDATA%\Try FydeOS\runtime\<sha256 prefix>\` (hash
 verified while extracting), so a newer exe brings its own runtime without
-touching the VM; Launch streams `image.zst` from the exe straight into
-`disk.raw` with the existing decoder, no temporary copy. The CLI stays a
-development tool and is not shipped.
+touching the VM; Launch downloads and converts the image as above. The
+CLI stays a development tool and is not shipped.
 
 Unsigned (D-W3): SmartScreen shows "Windows protected your PC" once, the
-user clicks More info, Run anyway. Defender scans the download; the time
-it takes on a 1.7 GB file is measured in milestone 4. When the image
-download split arrives, the same exe without `image.zst` in its payload
-downloads the image instead of reading it from itself.
+user clicks More info, Run anyway. Defender scans the download; with the
+image out of the exe the scan covers 51 MB instead of 1.7 GB (to be
+measured on the NUC).
 
 ### Workflow
 
@@ -316,8 +343,17 @@ in session 0).
    1780x1001 client area; full screen 1920x1080. The packaged exe with this
    runtime booted into the same frame and shut down through the close
    prompt (`out/nuc-m6/`).
-6. Later: image download (D-W2 split), shared folder, clipboard, port
-   forwards UI.
+6. Image download (D-W2 revised 2026-11-02): spec schema 2, release API,
+   resumable download into `images\`, VMDK conversion cut at the GPT end,
+   update notice in the reset section; the exe drops `image.zst`.
+   Done on the workstation 2026-11-02: unit tests on VMDK fixtures with a
+   GPT, the v23.1 Preview1 OVA converted in 27 s (3.3 GB allocated) and
+   identical to qemu-img's conversion over its 7,314,946,560 bytes; exe
+   51.0 MB. On the NUC 2026-11-02 (`out/nuc-dl/`): download 154 s at
+   12.4 MB/s, sha256 verified, conversion 21.7 s, QMP ready 10 s after
+   QEMU start, OOBE 147 s later; the second launch found the image current
+   and skipped straight to QEMU; both shutdowns exit 0.
+7. Later: shared folder, clipboard, port forwards UI.
 
 ## Known risks
 
@@ -340,8 +376,14 @@ in session 0).
   Intel workarounds are in play).
 - Fast startup: Try Omarchy disables it; whether WHPX misbehaves after a
   fast-startup resume is measured in milestone 2.
-- Antivirus: a 7 GB sparse write and an 80 MB QEMU binary may be slowed
-  or quarantined by Defender on first run; unsigned exe plus SmartScreen.
+- Antivirus: a 1.9 GB download, a 7 GB sparse write and an 80 MB QEMU
+  binary may be slowed or quarantined by Defender on first run; unsigned
+  exe plus SmartScreen.
+- Image source: the first Launch needs download.fydeos.io (or a mirror
+  reached through it) and the release API; offline first launches fail
+  unless `TRY_FYDEOS_FACTORY_IMAGE` names a local image. If the file behind
+  the pinned URL is replaced while the API is unreachable, the download
+  fails its sha256 check until the spec is updated.
 
 ## TODO (parked)
 

@@ -12,9 +12,9 @@ import (
 	"tryfydeos.io/windows/internal/payload/payloadtest"
 )
 
-// packagedExe appends a runtime.zip, the test image and its spec to a fake PE.
-func packagedExe(t *testing.T) (string, *FactorySpec, []byte) {
-	image, spec, raw := testImage(t)
+// packagedExe appends a runtime.zip and a spec to a fake PE.
+func packagedExe(t *testing.T) (string, *FactorySpec) {
+	spec, _ := testSpec(t)
 	dir := t.TempDir()
 	var zipped bytes.Buffer
 	zw := zip.NewWriter(&zipped)
@@ -33,16 +33,15 @@ func packagedExe(t *testing.T) (string, *FactorySpec, []byte) {
 	out := filepath.Join(dir, "Try FydeOS.exe")
 	if _, err := payload.Append(exe, out, []payload.File{
 		{Name: payload.RuntimeEntry, Path: write("runtime.zip", zipped.Bytes())},
-		{Name: payload.ImageEntry, Path: image},
 		{Name: payload.SpecEntry, Path: write("spec.json", specJSON)},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	return out, spec, raw
+	return out, spec
 }
 
 func TestPackagedLocationsExtractAndPrepare(t *testing.T) {
-	exe, spec, raw := packagedExe(t)
+	exe, spec := packagedExe(t)
 	p, err := payload.Open(exe)
 	if err != nil {
 		t.Fatal(err)
@@ -68,16 +67,18 @@ func TestPackagedLocationsExtractAndPrepare(t *testing.T) {
 	}
 	defer lock.Release()
 	var lines []string
-	m, _, err := l.PrepareWorkspace(ws, lock, func(s string) { lines = append(lines, s) }, nil)
+	var stages []PrepareStage
+	l.FactoryImageOverride = fixture("test.ova")
+	m, _, err := l.PrepareWorkspace(ws, lock, func(s string) { lines = append(lines, s) },
+		func(s PrepareStage, done, total int64) { stages = append(stages, s) })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if q, _ := os.ReadFile(l.QEMU()); string(q) != "qemu" || !l.RuntimeExtracted() || len(lines) != 3 {
+	if q, _ := os.ReadFile(l.QEMU()); string(q) != "qemu" || !l.RuntimeExtracted() || len(lines) != 4 {
 		t.Fatalf("runtime %q extracted %t, log %q", q, l.RuntimeExtracted(), lines)
 	}
-	disk, _ := os.ReadFile(ws.Disk())
-	if m.Factory.SHA256 != spec.Image.SHA256 || !bytes.Equal(disk[:len(raw)], raw) {
-		t.Fatal("disk differs from the payload image")
+	if m.Factory != (FactoryRecord{FileName: "test.ova", RawBytes: fixtureRawBytes}) || len(stages) == 0 || stages[0] != StageConverting {
+		t.Fatalf("metadata %+v, stages %v", m.Factory, stages)
 	}
 	if done, err := l.EnsureRuntime(); done || err != nil {
 		t.Fatalf("second extraction %t %v", done, err)
@@ -94,10 +95,5 @@ func TestPackagedLocationsExtractAndPrepare(t *testing.T) {
 	}
 	if done, err := l.EnsureRuntime(); done || err != nil {
 		t.Fatalf("extracted despite TRY_FYDEOS_RUNTIME: %t %v", done, err)
-	}
-	if img, err := l.OpenFactoryImage(spec); err != nil || img.Size != spec.Image.Bytes {
-		t.Fatalf("payload image with a spec override: %v", err)
-	} else {
-		img.Close()
 	}
 }

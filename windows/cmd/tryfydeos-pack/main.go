@@ -1,5 +1,5 @@
-// Command tryfydeos-pack appends the payload (trimmed runtime, factory image,
-// spec) to the GUI exe, producing the single-file distribution.
+// Command tryfydeos-pack appends the payload (trimmed runtime, factory spec)
+// to the GUI exe, producing the single-file distribution.
 package main
 
 import (
@@ -102,13 +102,9 @@ func size(p string) int64 {
 
 func mb(n int64) string { return fmt.Sprintf("%.1f MB", float64(n)/1e6) }
 
-func run(exe, runtimeDir, image, specPath, out string) error {
-	spec, err := core.LoadFactorySpec(specPath)
-	if err != nil {
+func run(exe, runtimeDir, specPath, out string) error {
+	if _, err := core.LoadFactorySpec(specPath); err != nil {
 		return err
-	}
-	if n := size(image); n != spec.Image.Bytes {
-		return fmt.Errorf("%s is %d bytes, %s says %d", image, n, specPath, spec.Image.Bytes)
 	}
 	if _, err := os.Stat(filepath.Join(runtimeDir, "bin", core.QEMUNames[0])); err != nil {
 		return fmt.Errorf("runtime %s: %w (run make win-runtime)", runtimeDir, err)
@@ -125,7 +121,6 @@ func run(exe, runtimeDir, image, specPath, out string) error {
 	fmt.Printf("runtime.zip  %s (%d files, %s unpacked)\n", mb(size(zipPath)), files, mb(unpacked))
 	entries, err := payload.Append(exe, out, []payload.File{
 		{Name: payload.RuntimeEntry, Path: zipPath},
-		{Name: payload.ImageEntry, Path: image, SHA256: spec.Image.SHA256},
 		{Name: payload.SpecEntry, Path: specPath},
 	})
 	if err != nil {
@@ -149,15 +144,14 @@ func run(exe, runtimeDir, image, specPath, out string) error {
 func main() {
 	exe := flag.String("exe", "", "built GUI exe (out/win-build/Try FydeOS.exe)")
 	runtimeDir := flag.String("runtime", "", "unpacked runtime (out/win-runtime)")
-	image := flag.String("image", "", "factory .zst image")
 	spec := flag.String("spec", "", "factory spec json")
 	out := flag.String("out", "", "output exe")
 	flag.Parse()
-	if *exe == "" || *runtimeDir == "" || *image == "" || *spec == "" || *out == "" || flag.NArg() != 0 {
+	if *exe == "" || *runtimeDir == "" || *spec == "" || *out == "" || flag.NArg() != 0 {
 		flag.Usage()
 		os.Exit(2)
 	}
-	if err := run(*exe, *runtimeDir, *image, *spec, *out); err != nil {
+	if err := run(*exe, *runtimeDir, *spec, *out); err != nil {
 		fmt.Fprintln(os.Stderr, "tryfydeos-pack:", err)
 		os.Exit(1)
 	}

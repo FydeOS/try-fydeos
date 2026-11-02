@@ -1,14 +1,15 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"tryfydeos.io/windows/internal/payload"
 )
@@ -31,6 +32,8 @@ type Locations struct {
 	Forwards             []HostForward
 	// Payload is the data appended to a packaged exe, nil in a development build.
 	Payload *payload.Payload
+	// AppVersion names the app to the release API.
+	AppVersion string
 }
 
 func (l *Locations) LogsDir() string         { return filepath.Join(l.AppData, "Logs") }
@@ -59,15 +62,6 @@ func (l *Locations) RuntimeBuild() string {
 	}
 	line, _, _ := strings.Cut(string(data), "\n")
 	return strings.TrimSpace(line)
-}
-
-// FactoryImageCandidates: TRY_FYDEOS_FACTORY_IMAGE, then the spec's own directory.
-func (l *Locations) FactoryImageCandidates(spec *FactorySpec) []string {
-	var c []string
-	if l.FactoryImageOverride != "" {
-		c = append(c, l.FactoryImageOverride)
-	}
-	return append(c, filepath.Join(filepath.Dir(l.Spec), spec.Image.File))
 }
 
 // PayloadRuntime is where the payload's runtime.zip is extracted: one directory
@@ -103,46 +97,60 @@ func (l *Locations) SpecName() string {
 	return l.Payload.Path + ":" + payload.SpecEntry
 }
 
-// ImageSource is the compressed factory image: a file or a payload entry.
-type ImageSource struct {
-	Name string
-	Size int64
-	io.ReadCloser
-}
-
-// OpenFactoryImage: TRY_FYDEOS_FACTORY_IMAGE, then the payload, then the file next to the spec.
-func (l *Locations) OpenFactoryImage(spec *FactorySpec) (*ImageSource, error) {
-	if l.Payload != nil && l.FactoryImageOverride == "" {
-		r, e, err := l.Payload.Entry(payload.ImageEntry)
-		if err != nil {
-			return nil, err
+// FactoryContainer is the .ova or .zip a new VM is converted from, and its
+// record: TRY_FYDEOS_FACTORY_IMAGE as is; otherwise the release API's image
+// when it differs from the pinned one, else the pinned one, downloaded into
+// ImageDir unless a file of the right size is there.
+func (l *Locations) FactoryContainer(ctx context.Context, spec *FactorySpec, say func(string),
+	progress func(done, total int64)) (string, FactoryRecord, error) {
+	if l.FactoryImageOverride != "" {
+		if st, err := os.Stat(l.FactoryImageOverride); err != nil || !st.Mode().IsRegular() {
+			return "", FactoryRecord{}, fmt.Errorf("FydeOS image %s not found (TRY_FYDEOS_FACTORY_IMAGE)", l.FactoryImageOverride)
 		}
-		return &ImageSource{Name: l.Payload.Path + ":" + payload.ImageEntry, Size: e.Length, ReadCloser: io.NopCloser(r)}, nil
+		say("using the local image " + l.FactoryImageOverride)
+		return l.FactoryImageOverride, FactoryRecord{FileName: filepath.Base(l.FactoryImageOverride)}, nil
 	}
-	path, err := l.FactoryImage(spec)
+	name, err := urlFileName(spec.Image.URL)
 	if err != nil {
-		return nil, err
+		return "", FactoryRecord{}, err
 	}
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
+	record := FactoryRecord{URL: spec.Image.URL, FileName: name, SHA256: spec.Image.SHA256, Version: spec.Image.Version}
+	size := spec.Image.Bytes
+	if rel, err := FetchRelease(ctx, spec.Release.API, spec.Release.Board, l.AppVersion); err != nil {
+		say("release API: " + err.Error() + "; using the pinned image")
+	} else if rel.SHA256 == record.SHA256 {
+		say("release API lists the pinned image " + rel.FileName)
+	} else if n, err := RemoteSize(ctx, rel.URL); err != nil {
+		say(fmt.Sprintf("release API lists %s %s (%s), but its size is unknown: %v; using the pinned image", rel.FileName, rel.Version, rel.ReleaseDate, err))
+	} else {
+		say(fmt.Sprintf("release API lists %s %s (%s), newer than the pinned image", rel.FileName, rel.Version, rel.ReleaseDate))
+		record = FactoryRecord{URL: rel.URL, FileName: rel.FileName, SHA256: rel.SHA256, Version: rel.Version + ", " + rel.ReleaseDate}
+		size = n
 	}
-	st, err := f.Stat()
-	if err != nil {
-		f.Close()
-		return nil, err
+	dest := filepath.Join(ImageDir(l.AppData), record.FileName)
+	if st, err := os.Stat(dest); err == nil && st.Size() == size {
+		say("using the downloaded image " + dest)
+		return dest, record, nil
 	}
-	return &ImageSource{Name: path, Size: st.Size(), ReadCloser: f}, nil
-}
-
-func (l *Locations) FactoryImage(spec *FactorySpec) (string, error) {
-	candidates := l.FactoryImageCandidates(spec)
-	for _, p := range candidates {
-		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() {
-			return p, nil
-		}
+	if err := os.MkdirAll(ImageDir(l.AppData), 0o700); err != nil {
+		return "", FactoryRecord{}, err
 	}
-	return "", fmt.Errorf("FydeOS image %s not found (looked at: %s)", spec.Image.File, strings.Join(candidates, ", "))
+	var have int64
+	if st, err := os.Stat(dest + ".part"); err == nil {
+		have = st.Size()
+	}
+	if _, free, err := VolumeInfo(ImageDir(l.AppData)); err != nil {
+		return "", FactoryRecord{}, err
+	} else if need := size - have + workReserve; free < need {
+		return "", FactoryRecord{}, fmt.Errorf("not enough free space: %.1f GB needed, %.1f GB available", float64(need)/1e9, float64(free)/1e9)
+	}
+	say(fmt.Sprintf("downloading %s into %s (%d bytes)", record.URL, dest, size))
+	start := time.Now()
+	if err := Download(ctx, record.URL, size, record.SHA256, dest, progress); err != nil {
+		return "", FactoryRecord{}, err
+	}
+	say(fmt.Sprintf("downloaded in %.1f s", time.Since(start).Seconds()))
+	return dest, record, nil
 }
 
 // DiscoverLocations resolves defaults next to the executable (development

@@ -18,6 +18,7 @@ public enum StringKey: String, CaseIterable, Sendable {
     case microphoneDetail
     case factoryReset
     case factoryResetDetail
+    case updateAvailable
     case resetButton
     case launch
     case launchPreparing
@@ -28,6 +29,8 @@ public enum StringKey: String, CaseIterable, Sendable {
     case statusNotRunningAfter
     case statusPreparing
     case statusUnpacking
+    case statusDownloading
+    case statusConverting
     case statusStarting
     case statusRunningSince
     case statusShuttingDown
@@ -40,6 +43,7 @@ public enum StringKey: String, CaseIterable, Sendable {
     case errorLaunchTitle
     case resetTitle
     case resetMessage
+    case resetMessageUpdate
     case resetConfirm
     case resetDone
     case resetFailedTitle
@@ -73,6 +77,7 @@ public enum Strings {
         .microphoneDetail: "Optional. Apps in FydeOS can record from your Mac microphone.",
         .factoryReset: "Factory reset",
         .factoryResetDetail: "Erase this VM and return it to factory settings.",
+        .updateAvailable: "FydeOS %@ (%@) is available. Factory reset installs it.",
         .resetButton: "Reset FydeOS…",
         .launch: "Launch FydeOS",
         .launchPreparing: "Preparing FydeOS…",
@@ -83,6 +88,8 @@ public enum Strings {
         .statusNotRunningAfter: "Not running. %@",
         .statusPreparing: "Preparing…",
         .statusUnpacking: "Unpacking FydeOS… %d%%",
+        .statusDownloading: "Downloading FydeOS… %d%%",
+        .statusConverting: "Converting FydeOS… %d%%",
         .statusStarting: "Starting…",
         .statusRunningSince: "Running since %@",
         .statusShuttingDown: "Shutting down…",
@@ -95,6 +102,7 @@ public enum Strings {
         .errorLaunchTitle: "Try FydeOS couldn’t start",
         .resetTitle: "Reset FydeOS to factory settings?",
         .resetMessage: "This permanently erases everything in this FydeOS virtual machine, including apps, files, accounts and settings. This cannot be undone.",
+        .resetMessageUpdate: "Erase this VM and install FydeOS %@ (%@)?",
         .resetConfirm: "Reset",
         .resetDone: "FydeOS has been reset.",
         .resetFailedTitle: "FydeOS couldn’t be reset",

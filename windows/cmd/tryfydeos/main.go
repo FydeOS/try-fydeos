@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -23,7 +24,7 @@ func (e usageError) Error() string { return string(e) }
 const usage = `usage: tryfydeos <command> [options]
 
   doctor                      check host, WHPX, runtime, firmware, factory image, workspace
-  prepare                     unpack the FydeOS image into the VM disk
+  prepare                     download the FydeOS image if needed and convert it into the VM disk
   run [vm options]            prepare if needed, boot the VM, supervise until QEMU exits
   inspect [vm options]        print the QEMU argv run would use, one argument per line
   shutdown                    ask the running VM's supervisor for the powerdown ladder
@@ -33,7 +34,7 @@ vm options: --cpus N (4)  --memory-mib MiB (8192)  --full-screen  --cpu-fallback
             --forward HOSTPORT:GUESTPORT (repeatable, 127.0.0.1 only)
 all commands: --workspace DIR (default %LOCALAPPDATA%\Try FydeOS\VM\v1)
               --runtime DIR (default runtime\ next to the exe)  --spec FILE
-              --exe FILE (packaged "Try FydeOS.exe" whose payload supplies runtime, spec and image)`
+              --exe FILE (packaged "Try FydeOS.exe" whose payload supplies runtime and spec)`
 
 type options struct {
 	loc    *core.Locations
@@ -63,6 +64,7 @@ func parseOptions(args []string, allowed map[string]bool) (*options, error) {
 	if err != nil {
 		return nil, err
 	}
+	loc.AppVersion = "cli"
 	o := &options{loc: loc, launch: core.LaunchOptions{CPUs: 4, MemoryMiB: 8192}}
 	var forwards []core.HostForward
 	for i := 0; i < len(args); i++ {
@@ -141,14 +143,12 @@ func say(message string) { fmt.Fprintf(os.Stderr, "tryfydeos: %s\n", message) }
 func report(state, what string) { fmt.Printf("%-8s %s\n", state, what) }
 
 func prepare(ws *core.Workspace, lock *core.StorageLock, loc *core.Locations) (*core.Metadata, error) {
-	m, spec, err := loc.PrepareWorkspace(ws, lock, say, func(written, total int64) {
-		say(fmt.Sprintf("unpacking the FydeOS image: %d%%", written*100/total))
+	stages := map[core.PrepareStage]string{core.StageDownloading: "downloading", core.StageConverting: "converting"}
+	m, _, err := loc.PrepareWorkspace(ws, lock, say, func(stage core.PrepareStage, done, total int64) {
+		say(fmt.Sprintf("%s the FydeOS image: %d%%", stages[stage], done*100/total))
 	})
 	if err != nil {
 		return nil, err
-	}
-	if m.Factory.SHA256 != spec.Image.SHA256 {
-		say(fmt.Sprintf("note: this VM was prepared from factory %.12s; spec now pins %.12s (reset to switch)", m.Factory.SHA256, spec.Image.SHA256))
 	}
 	return m, nil
 }
@@ -183,7 +183,7 @@ func cmdDoctor(o *options) (int, error) {
 			report("info", fmt.Sprintf("  %-12s %11d bytes  sha256 %s", e.Name, e.Length, e.SHA256))
 		}
 	} else {
-		report("info", "no payload (development build): runtime, spec and image from files")
+		report("info", "no payload (development build): runtime and spec from files")
 	}
 	if loc.RuntimeFromPayload() && !loc.RuntimeExtracted() {
 		report("info", fmt.Sprintf("runtime %s not extracted yet (the first launch or prepare extracts it)", loc.Runtime))
@@ -209,13 +209,27 @@ func cmdDoctor(o *options) (int, error) {
 	if err != nil {
 		check(false, "factory spec "+loc.SpecName()+": "+err.Error(), errors.Is(err, os.ErrNotExist))
 	} else {
-		report("info", fmt.Sprintf("factory spec %s: %s %s %s", loc.SpecName(), spec.Image.File, spec.Image.Version, spec.Board))
-		report("info", fmt.Sprintf("factory raw %d bytes, sha256 %s; VM disk %d bytes (sparse)", spec.Image.RawBytes, spec.Image.RawSHA256, spec.DiskBytes))
-		if image, err := loc.OpenFactoryImage(spec); err == nil {
-			image.Close()
-			check(image.Size == spec.Image.Bytes, fmt.Sprintf("factory image %s (%d bytes, spec says %d)", image.Name, image.Size, spec.Image.Bytes), false)
+		report("info", fmt.Sprintf("factory spec %s: board %s, VM disk %d bytes (sparse)", loc.SpecName(), spec.Board, spec.DiskBytes))
+		report("info", fmt.Sprintf("pinned image %s (%d bytes, sha256 %s): %s", spec.Image.URL, spec.Image.Bytes, spec.Image.SHA256, spec.Image.Version))
+		if loc.FactoryImageOverride != "" {
+			st, err := os.Stat(loc.FactoryImageOverride)
+			check(err == nil && st.Mode().IsRegular(), "local image "+loc.FactoryImageOverride+" (TRY_FYDEOS_FACTORY_IMAGE)", err != nil)
+		}
+		dir := core.ImageDir(loc.AppData)
+		if entries, err := os.ReadDir(dir); err != nil || len(entries) == 0 {
+			report("info", fmt.Sprintf("images %s: none downloaded yet", dir))
 		} else {
-			check(false, err.Error(), true)
+			report("info", fmt.Sprintf("images %s:", dir))
+			for _, e := range entries {
+				if info, err := e.Info(); err == nil {
+					report("info", fmt.Sprintf("  %-48s %11d bytes", e.Name(), info.Size()))
+				}
+			}
+		}
+		if r, err := core.FetchRelease(context.Background(), spec.Release.API, spec.Release.Board, loc.AppVersion); err != nil {
+			report("info", "release API: "+err.Error())
+		} else {
+			report("info", fmt.Sprintf("release API latest %s: %s %s (%s), sha256 %s", spec.Release.Board, r.FileName, r.Version, r.ReleaseDate, r.SHA256))
 		}
 	}
 	ws := o.workspace()
@@ -256,7 +270,7 @@ func cmdPrepare(o *options) (int, error) {
 		return 1, err
 	}
 	fmt.Printf("prepared %s\n", ws.Dir)
-	fmt.Printf("factory %s sha256 %s\n", m.Factory.File, m.Factory.SHA256)
+	fmt.Printf("factory %s sha256 %s (%s), FydeOS image %d bytes\n", m.Factory.FileName, m.Factory.SHA256, m.Factory.Version, m.Factory.RawBytes)
 	fmt.Printf("disk %s %d bytes\n", ws.Disk(), m.DiskBytes)
 	fmt.Printf("mac %s created %s\n", m.MAC, m.Created)
 	return 0, nil

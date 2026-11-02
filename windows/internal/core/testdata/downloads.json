@@ -1,0 +1,83 @@
+{
+  "list": [
+    {
+      "name": "FydeOS for VMware",
+      "type": "vmware",
+      "board": "amd64-vmware",
+      "arch": "x86_64",
+      "version": "23.1",
+      "changelogUrl": "/release/amd64-vmware/23.1/",
+      "releaseDate": "2026-10-30",
+      "chromiumOsVersion": "Chromium OS release-R150-16700.B",
+      "fileName": "FydeOS-VMWare-v23.1-Preview1-x86_64-io.ova",
+      "checksum": "57062f6e21f1d0933d7bb0e2f0a8ceb1fc78d16c73b252ba0f679ff627a2f4ba",
+      "isEOL": false,
+      "downloadUrls": [
+        {
+          "type": "official",
+          "url": "https://download.fydeos.io/v23.1/FydeOS-VMWare-v23.1-Preview1-x86_64-io.ova"
+        },
+        {
+          "type": "thirdParty",
+          "vendor": "gdrive",
+          "url": "https://drive.google.com/file/d/1NZmX6NdGlTHqxWPEFskEAr3OwYaHcTAh/view?usp=sharing"
+        }
+      ]
+    },
+    {
+      "name": "FydeOS for VMware",
+      "type": "vmware",
+      "board": "arm64-vmware",
+      "arch": "arm64",
+      "version": "23.1",
+      "changelogUrl": "/release/arm64-vmware/23.1/",
+      "releaseDate": "2026-10-30",
+      "chromiumOsVersion": "Chromium OS release-R150-16700.B",
+      "fileName": "FydeOS-VMWare-v23.1-Preview1-arm64-io.zip",
+      "checksum": "97ab06aeaeecd3b4f4271059668e8c0329192d27b794ccb28e5e028b81704887",
+      "isEOL": false,
+      "downloadUrls": [
+        {
+          "type": "official",
+          "url": "https://download.fydeos.io/v23.1/FydeOS-VMWare-v23.1-Preview1-arm64-io.zip"
+        },
+        {
+          "type": "thirdParty",
+          "vendor": "gdrive",
+          "url": "https://drive.google.com/file/d/1GlcLEy9H_ABdEsGHtTgHtYWaymIC2OKM/view?usp=sharing"
+        }
+      ]
+    },
+    {
+      "name": "FydeOS for You - Microsoft Surface Pro 3",
+      "type": "you",
+      "board": "surface-pro3",
+      "arch": "x86_64",
+      "brand": "Microsoft",
+      "device": "Surface Pro 3",
+      "deviceReleaseDate": "2014-06-10",
+      "image": "https://release-api.fydeos.io/images/device/surface-pro3.svg",
+      "version": "19.0-SP1",
+      "changelogUrl": "/blog/release-note-v19/",
+      "releaseDate": "2024-12-31",
+      "chromiumOsVersion": "Chromium OS release-R126-15886.B",
+      "fileName": "FydeOS_for_You_Surface_Pro_3_v19.0-SP1-io.img.xz",
+      "checksum": "241bc3d713a4890e765f46f858faade78a4a5ac9513772f8a2a07fd3744465da",
+      "isEOL": true,
+      "downloadUrls": [
+        {
+          "type": "official",
+          "url": "https://download.fydeos.io/v19.0-SP1/FydeOS_for_You_Surface_Pro_3_v19.0-SP1-io.img.xz"
+        },
+        {
+          "type": "thirdParty",
+          "url": "https://drive.google.com/file/d/10gF8EDBH86bEiXZPLVhoJ3TqZ_f2Z3ur/view?usp=sharing"
+        },
+        {
+          "type": "thirdParty",
+          "url": "https://www.icloud.com/iclouddrive/09fCxjHfW_6q2yqLAng5jqykw#FydeOS_for_You_Surface_Pro_3_v19.0-SP1-io"
+        }
+      ]
+    }
+  ]
+}

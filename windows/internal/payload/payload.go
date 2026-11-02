@@ -21,7 +21,6 @@ import (
 const (
 	Magic        = "TRYFYDEOS-PAYLOAD-1"
 	RuntimeEntry = "runtime.zip"
-	ImageEntry   = "image.zst"
 	SpecEntry    = "spec.json"
 
 	maxIndex = 1 << 20

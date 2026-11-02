@@ -39,14 +39,13 @@ func packed(t *testing.T) (string, map[string][]byte) {
 	exe := fakePE(t, dir)
 	content := map[string][]byte{
 		RuntimeEntry: bytes.Repeat([]byte("runtime"), 1000),
-		ImageEntry:   bytes.Repeat([]byte("image"), 5000),
-		SpecEntry:    []byte(`{"schema":1}`),
+		SpecEntry:    []byte(`{"schema":2}`),
 	}
 	var files []File
-	for _, name := range []string{RuntimeEntry, ImageEntry, SpecEntry} {
+	for _, name := range []string{RuntimeEntry, SpecEntry} {
 		files = append(files, File{Name: name, Path: writeFile(t, dir, name, content[name])})
 	}
-	files[1].SHA256 = sum(content[ImageEntry])
+	files[0].SHA256 = sum(content[RuntimeEntry])
 	out := filepath.Join(dir, "out.exe")
 	if _, err := Append(exe, out, files); err != nil {
 		t.Fatal(err)
@@ -61,7 +60,7 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer p.Close()
-	if p.Start != payloadtest.ImageEnd || len(p.Entries) != 3 {
+	if p.Start != payloadtest.ImageEnd || len(p.Entries) != 2 {
 		t.Fatalf("start %#x entries %+v", p.Start, p.Entries)
 	}
 	for name, want := range content {

@@ -24,10 +24,11 @@ func (p Phase) String() string {
 }
 
 // State is the start menu's state. Message belongs to NotRunning (optional) and
-// Failed, Bytes/Total to Preparing, Since to Running.
+// Failed, Stage/Bytes/Total to Preparing, Since to Running.
 type State struct {
 	Phase   Phase
 	Message string
+	Stage   core.PrepareStage
 	Bytes   int64
 	Total   int64
 	Since   time.Time
@@ -55,8 +56,15 @@ func (s State) StatusText() string {
 		}
 		return L(StatusNotRunningAfter, s.Message)
 	case Preparing:
-		if s.Total > 0 {
-			return L(StatusUnpacking, int(min(1, float64(s.Bytes)/float64(s.Total))*100))
+		if s.Total <= 0 {
+			return L(StatusPreparing)
+		}
+		percent := int(min(1, float64(s.Bytes)/float64(s.Total)) * 100)
+		switch s.Stage {
+		case core.StageDownloading:
+			return L(StatusDownloading, percent)
+		case core.StageConverting:
+			return L(StatusConverting, percent)
 		}
 		return L(StatusPreparing)
 	case Starting:
@@ -93,16 +101,20 @@ const (
 	EventRunning
 	EventExited
 	EventFailed
+	EventRelease
 )
 
-// Event is what the driver reports. EventExited and EventFailed both mean nothing runs any more.
+// Event is what the driver reports. EventExited and EventFailed both mean
+// nothing runs any more; EventRelease carries the release API's answer.
 type Event struct {
 	Kind    EventKind
+	Stage   core.PrepareStage
 	Bytes   int64
 	Total   int64
 	Pid     int
 	Exit    core.Exit
 	Message string
+	Release *core.Release
 }
 
 func ExitDescription(e core.Exit) string { return fmt.Sprintf("exit code %d, %s", e.Code, e.Reason) }
@@ -114,6 +126,10 @@ type Driver interface {
 	PauseForSleep()
 	ResumeAfterWake()
 	FactoryReset() error
+	// CheckRelease asks the release API once and reports EventRelease if it answers.
+	CheckRelease(events func(Event))
+	// PreparedFactory is the image the prepared VM was converted from.
+	PreparedFactory() (core.FactoryRecord, bool)
 }
 
 // Controller is the start menu's state machine. UI thread only.
@@ -121,8 +137,11 @@ type Controller struct {
 	OnStateChange func(State)
 	OnError       func(title, message string)
 	OnReadyToQuit func()
-	Now           func() time.Time
+	// OnReleaseChange runs when the release API's answer arrives.
+	OnReleaseChange func()
+	Now             func() time.Time
 
+	release     *core.Release
 	state       State
 	quitPending bool
 	vmPid       int
@@ -147,6 +166,19 @@ func (c *Controller) setState(s State) {
 	if c.OnStateChange != nil {
 		c.OnStateChange(s)
 	}
+}
+
+func (c *Controller) CheckRelease() { c.driver.CheckRelease(c.Handle) }
+
+// UpdateRelease is the release API's image when the prepared VM was converted from another one.
+func (c *Controller) UpdateRelease() *core.Release {
+	if c.release == nil {
+		return nil
+	}
+	if f, ok := c.driver.PreparedFactory(); !ok || f.SHA256 == c.release.SHA256 {
+		return nil
+	}
+	return c.release
 }
 
 func (c *Controller) CanLaunch() bool       { return !c.state.Active() && !c.quitPending }
@@ -211,7 +243,7 @@ func (c *Controller) Handle(ev Event) {
 		if c.state.Phase != Preparing {
 			return
 		}
-		c.setState(State{Phase: Preparing, Bytes: ev.Bytes, Total: ev.Total})
+		c.setState(State{Phase: Preparing, Stage: ev.Stage, Bytes: ev.Bytes, Total: ev.Total})
 	case EventStarting:
 		if c.state.Phase != Preparing {
 			return
@@ -242,6 +274,11 @@ func (c *Controller) Handle(ev Event) {
 		c.vmPid = 0
 		c.fail(ev.Message, L(ErrorLaunchTitle))
 		c.finishQuit()
+	case EventRelease:
+		c.release = ev.Release
+		if c.OnReleaseChange != nil {
+			c.OnReleaseChange()
+		}
 	}
 }
 

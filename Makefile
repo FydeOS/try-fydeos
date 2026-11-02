@@ -40,8 +40,7 @@ help:
 	@echo "make win-rsrc   render the icon and compile windows/versioninfo.rc into the GUI's .syso"
 	@echo "make win-test   run the Go unit tests of windows/ on this host"
 	@echo "make win-sync   copy both exes, spec and sources to the NUC ($(NUC_DIR))"
-	@echo "make win-image  compress the amd64 raw image for factory/ (WIN_RAW=... WIN_ZST=...)"
-	@echo "make win-dist   pack dist/Try FydeOS-<version>.exe: GUI exe + runtime, image and spec payload"
+	@echo "make win-dist   pack dist/Try FydeOS-<version>.exe: GUI exe + runtime and spec payload"
 
 sync:
 	@test "$$(uname -s)" != Darwin || { echo "make sync: run this on the workstation" >&2; exit 1; }
@@ -109,8 +108,6 @@ test:
 NUC_HOST ?= wei@localhost
 NUC_PORT ?= 2223
 NUC_DIR ?= D:/try-fydeos/dev
-WIN_RAW ?= out/amd64/chromiumos_image-R150-16700.56.0-d2026_10_27_112641-a1.bin
-WIN_ZST ?= factory/fydeos-amd64-vmware-io-R150-16700.56.0-d20261027.bin.zst
 WIN_SPEC ?= factory/amd64-vmware-io.json
 # windows/versioninfo.rc is the version's source of truth.
 WIN_VERSION = $(shell sed -n 's/.*"ProductVersion", "\(.*\)".*/\1/p' windows/versioninfo.rc)
@@ -119,7 +116,7 @@ WIN_DIST = dist/Try FydeOS-$(WIN_VERSION).exe
 # own: our build pinned in windows/runtime.lock.json; omarchy: Try Omarchy's published zip.
 WIN_RUNTIME ?= own
 
-.PHONY: win-runtime win-runtime-build win-build win-rsrc win-test win-sync win-image win-dist
+.PHONY: win-runtime win-runtime-build win-build win-rsrc win-test win-sync win-dist
 
 win-runtime:
 	windows/scripts/fetch-runtime.sh $(WIN_RUNTIME)
@@ -143,13 +140,7 @@ win-sync: win-build
 	scp -o BatchMode=yes -P $(NUC_PORT) out/win-build/*.exe factory/amd64-vmware-io.json $(NUC_HOST):$(NUC_DIR)/
 	scp -o BatchMode=yes -r -P $(NUC_PORT) windows $(NUC_HOST):$(NUC_DIR)/src
 
-win-image:
-	zstd -T32 -19 -f "$(WIN_RAW)" -o "$(WIN_ZST)"
-	@echo "rawBytes $$(stat -c %s "$(WIN_RAW)") rawSha256 $$(sha256sum "$(WIN_RAW)" | cut -d' ' -f1)"
-	@echo "bytes $$(stat -c %s "$(WIN_ZST)") sha256 $$(sha256sum "$(WIN_ZST)" | cut -d' ' -f1)"
-
 win-dist: win-build
 	@test -n "$(WIN_VERSION)" || { echo "win-dist: no ProductVersion in windows/versioninfo.rc" >&2; exit 1; }
 	cd windows && go run ./cmd/tryfydeos-pack --exe "../out/win-build/Try FydeOS.exe" --runtime ../out/win-runtime \
-		--image "../$(dir $(WIN_SPEC))$$($(PYTHON) -c 'import json,sys; print(json.load(open(sys.argv[1]))["image"]["file"])' ../$(WIN_SPEC))" \
 		--spec ../$(WIN_SPEC) --out "../$(WIN_DIST)"
