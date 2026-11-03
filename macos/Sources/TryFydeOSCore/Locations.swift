@@ -116,7 +116,7 @@ public struct Locations: Sendable {
                          bundleResources: resources,
                          runtime: try pick("TRY_FYDEOS_RUNTIME", "runtime", "out/runtime/current/runtime"),
                          firmware: try pick("TRY_FYDEOS_FIRMWARE", "firmware", "firmware"),
-                         factorySpec: try base("factory/spec.json", "factory/spec.json"),
+                         factorySpec: try base("factory/spec.json", "factory/arm64-vmware-io.json"),
                          factoryImageOverride: path("TRY_FYDEOS_FACTORY_IMAGE"),
                          appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")
     }
@@ -137,7 +137,7 @@ public struct Locations: Sendable {
         while dir.path != "/" {
             let fm = FileManager.default
             if fm.fileExists(atPath: dir.appendingPathComponent("runtime/lock.json").path),
-               fm.fileExists(atPath: dir.appendingPathComponent("factory/spec.json").path) {
+               fm.fileExists(atPath: dir.appendingPathComponent("factory/arm64-vmware-io.json").path) {
                 return dir
             }
             dir.deleteLastPathComponent()

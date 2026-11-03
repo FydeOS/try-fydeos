@@ -1,0 +1,15 @@
+{
+  "schema": 2,
+  "image": {"url": "https://download.fydeos.io/v23.1/FydeOS-VMWare-v23.1-Preview1-arm64-com.zip", "bytes": 1574009156, "sha256": "b547766936f75acc00db578c0cf6b1f1955fdc7d6e9136d86d557bbb3c6b8ac5", "version": "16700.56.23.11 release v23.1 Preview1, 2026-10-30"},
+  "release": {"api": "https://release-api.fydeos.com/api/downloads?l=zh", "board": "arm64-vmware"},
+  "diskBytes": 68719476736,
+  "board": "arm64-vmware-io",
+  "kernelCommandLine": {
+    "grubEntry": "local image A",
+    "dmVerity": false,
+    "acpiOff": false,
+    "console": "ttyS0,115200",
+    "serialConsoleUnderQEMU": "ACPI SPCR -> PL011",
+    "editsRequired": false
+  }
+}

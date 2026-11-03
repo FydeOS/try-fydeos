@@ -12,7 +12,7 @@ private func touch(_ url: URL) throws {
     defer { try? FileManager.default.removeItem(at: root) }
     // A repo checkout around the bundle must not be picked when running from the bundle.
     try touch(root.appendingPathComponent("runtime/lock.json"))
-    try touch(root.appendingPathComponent("factory/spec.json"))
+    try touch(root.appendingPathComponent("factory/arm64-vmware-io.json"))
     let contents = root.appendingPathComponent("dist/Try FydeOS.app/Contents")
     let exe = contents.appendingPathComponent("MacOS/TryFydeOS")
     try touch(exe)
@@ -31,7 +31,7 @@ private func touch(_ url: URL) throws {
     let root = try tempDir()
     defer { try? FileManager.default.removeItem(at: root) }
     try touch(root.appendingPathComponent("runtime/lock.json"))
-    try touch(root.appendingPathComponent("factory/spec.json"))
+    try touch(root.appendingPathComponent("factory/arm64-vmware-io.json"))
     let exe = root.appendingPathComponent("macos/.build/release/tryfydeos")
     try touch(exe)
     let loc = try Locations.discover(environment: [:], executable: exe)

@@ -237,7 +237,7 @@ func sha256(of url: URL, prefix: Int) throws -> String {
 
 @Test func repoFactorySpecLoads() throws {
     let spec = try FactorySpec.load(URL(fileURLWithPath: #filePath)
-        .deletingLastPathComponent().appendingPathComponent("../../../factory/spec.json").standardizedFileURL)
+        .deletingLastPathComponent().appendingPathComponent("../../../factory/arm64-vmware-io.json").standardizedFileURL)
     #expect(spec.board == "arm64-vmware-io")
     #expect(spec.image.bytes == 1574658456)
     #expect(spec.release.board == "arm64-vmware")

@@ -1,14 +1,24 @@
 # Factory images
 
-One spec per board pins the FydeOS image every new VM of that platform is
-made from: `spec.json` for `arm64-vmware-io` (macOS) and
-`amd64-vmware-io.json` for `amd64-vmware-io` (Windows, and a Linux port
-later). `diskBytes` is the size of the VM disk (64 GiB, sparse); the guest
-grows its stateful partition into it on first boot.
+One spec per board and edition pins the FydeOS image every new VM of that
+build is made from:
+
+| File | Platform | Edition |
+| --- | --- | --- |
+| `arm64-vmware-io.json` | macOS | io: `-io` image, release-api.fydeos.io |
+| `arm64-vmware-com.json` | macOS | com (China): `-com` image, release-api.fydeos.com |
+| `amd64-vmware-io.json` | Windows (a Linux port later) | io |
+| `amd64-vmware-com.json` | Windows | com |
+
+The edition is chosen at build time (`EDITION=io|com`), and the build
+bundles that edition's spec. The two editions' specs of a board differ
+only in `image` and `release`. `diskBytes` is the size of the VM disk
+(64 GiB, sparse); the guest grows its stateful partition into it on first
+boot.
 
 ## Schema 2
 
-Both specs pin the published VMware image, which the launcher downloads
+All specs pin the published VMware image, which the launcher downloads
 and converts itself; no image is built, compressed or kept here.
 
 - `image`: the pinned download. `url` (https), `bytes` and `sha256` of the

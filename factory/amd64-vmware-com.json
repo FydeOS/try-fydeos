@@ -1,0 +1,14 @@
+{
+  "schema": 2,
+  "image": {"url": "https://download.fydeos.io/v23.1/FydeOS-VMWare-v23.1-Preview1-x86_64-com.ova", "bytes": 1910811136, "sha256": "f4c85c964c44ca2b8be825f9bab35c6fedc6d0c853e2ea3a06a5c98a265cb059", "version": "16700.56.23.25 release v23.1 Preview1, 2026-10-30"},
+  "release": {"api": "https://release-api.fydeos.com/api/downloads?l=zh", "board": "amd64-vmware"},
+  "diskBytes": 68719476736,
+  "board": "amd64-vmware-io",
+  "kernelCommandLine": {
+    "grubEntry": "FydeOS image A",
+    "dmVerity": false,
+    "acpiOff": false,
+    "console": "ttyS0,115200",
+    "editsRequired": false
+  }
+}
