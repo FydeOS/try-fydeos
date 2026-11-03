@@ -27,9 +27,10 @@ fresh (D1).
   unmodified at run time, booted through UEFI from its own ESP. Guest-side
   fixes land in the FydeOS overlays (`project-vmware` and the two
   `overlay-*-openfyde_vmware` BSPs), never in this repo.
-- **Factory image**: one spec per board in `factory/` (`spec.json` for
-  arm64, `amd64-vmware-io.json` for amd64) pins the VMware image FydeOS
-  publishes for that board and names it in the release API. The launcher
+- **Factory image**: one spec per board and edition in `factory/`
+  (`<board>-io.json`, `<board>-com.json` for the China edition, chosen at
+  build time with `EDITION=com`) pins the VMware image FydeOS publishes for
+  that board and names it in the release API. The launcher
   downloads it at first launch, verifies it, decodes the VMDK inside into a
   sparse 64 GiB disk and keeps the download for factory resets; FydeOS
   grows its stateful partition into the free space on first boot (D14, D9).

@@ -130,19 +130,29 @@ pointer input on the virtio tablet.
 
 ### Packaging
 
-`Try FydeOS.app` (173 MB) holds the runtime, firmware, `spec.json` and
-icon under `Contents/Resources`; the QEMU binary is installed as
-`runtime/bin/Try FydeOS`. It carries no FydeOS image (D9 revised
+`Try FydeOS.app` (173 MB) holds the runtime, firmware, the factory spec
+(as `factory/spec.json`) and icon under `Contents/Resources`; the QEMU
+binary is installed as `runtime/bin/Try FydeOS`. It carries no FydeOS image (D9 revised
 2026-11-02): the first Launch downloads the published VMware image and
 converts it. Ad-hoc signed during development without `--deep`, so the
 QEMU hypervisor entitlement survives; Developer ID plus notarization are
 wired in `build-app.sh` and `package-dmg.sh` but unexercised. DMG is ULFO
 via `hdiutil`.
 
-`factory/spec.json`, schema 2: `image` pins the published download (`url`,
-`bytes`, `sha256` of the zip, `version` text), `release` names the release
-API (`api`, board `arm64-vmware`), and `diskBytes` (64 GiB), `board` and
-the `kernelCommandLine` facts stay as before.
+The com edition (China) is a build-time choice: `build-app.sh --edition
+com` writes `TryFydeOSEdition` `com` into the bundle's Info.plist, bundles
+`factory/arm64-vmware-com.json` (the `-com` image, the .com release API);
+the bundle is still `dist/Try FydeOS.app`, so build one edition at a time,
+and `package-dmg.sh --edition com` makes `dist/Try FydeOS-<version>-com.dmg`.
+Nothing else differs: same app name, bundle id, Application Support folder,
+logs and preferences, since nobody installs both editions on one Mac. `tryfydeos doctor` prints
+the edition (`TryFydeOSEdition`, or `TRY_FYDEOS_EDITION` for the CLI).
+
+`factory/arm64-vmware-io.json` (and `-com`), schema 2: `image` pins the
+published download (`url`, `bytes`, `sha256` of the zip, `version` text),
+`release` names the release API (`api`, board `arm64-vmware`), and
+`diskBytes` (64 GiB), `board` and the `kernelCommandLine` facts stay as
+before.
 
 A new VM is prepared in three steps:
 

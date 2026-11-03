@@ -29,7 +29,7 @@ Makefile          Mac: doctor · fetch · runtime · firmware · prepare · run 
                   Windows (run on the workstation): win-runtime · win-runtime-build · win-build · win-test · win-rsrc · win-sync · win-dist
                   both: sync · test
 docs/             design.md (overview), decisions.md; macos/ and windows/ hold each platform's design.md and records
-factory/          one spec per board (spec.json = arm64, amd64-vmware-io.json) pinning the published image
+factory/          one spec per board and edition (<board>-io.json, <board>-com.json) pinning the published image
 runtime/          macOS QEMU runtime build: lock.json, runtime.py, overlay patches, entitlements
 firmware/         edk2 UEFI pair for the macOS runtime, pinned by SHA-256
 macos/            Swift package: TryFydeOSCore, tryfydeos CLI, TryFydeOSAppModel + the AppKit app;
