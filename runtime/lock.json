@@ -140,6 +140,11 @@
       "name": "xz--5.8.3.arm64_sequoia.bottle.tar.gz",
       "sha256": "c4be907ac8459f8b3e764c06287cc88b79c1d5c16a2db1c0335e1facf4fd4dbe",
       "url": "https://ghcr.io/v2/homebrew/core/xz/blobs/sha256:c4be907ac8459f8b3e764c06287cc88b79c1d5c16a2db1c0335e1facf4fd4dbe"
+    },
+    {
+      "name": "spice-protocol-0.14.5.tar.xz",
+      "sha256": "baf58449f6e89d19f475899ad5fb9196fdc46c03cc53233f4e39cf2978f9cff7",
+      "url": "https://www.spice-space.org/download/releases/spice-protocol-0.14.5.tar.xz"
     }
   ],
   "recipe": [

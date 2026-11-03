@@ -59,8 +59,11 @@ written fresh.
   (a `glFlush` after each TRANSFER_TO_HOST_2D, see risks). Everything else
   is upstream's patch set unchanged; unused patches stay because dropping
   a Cocoa patch mid-chain invalidates the ones after it.
-- Later addition: spice-protocol headers and `--enable-spice-protocol`, so
-  the `qemu-vdagent` chardev exists for guest clipboard.
+- Guest clipboard: the headers of the pinned spice-protocol 0.14.5 tarball
+  are installed into a private root on QEMU's pkg-config path and QEMU is
+  configured with `--enable-spice-protocol`, so the `qemu-vdagent` chardev
+  exists. The runtime probe requires that chardev plus `virtio-serial-pci`
+  and `virtserialport`.
 
 ### QEMU contract (v1)
 

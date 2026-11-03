@@ -12,6 +12,10 @@ spec.loader.exec_module(runtime)
 
 SHA_A = "a" * 64
 SHA_B = "b" * 64
+SPICE_ANCHORS = ('tar -xzf "$qemu_archive" -C "$source_parent"\n'
+                 'pkg_config_libdir="$slirp_root/lib/pkgconfig:$libusb_root/lib/pkgconfig"\n'
+                 "require_private_pkg_version libusb-1.0 1.0.30\n"
+                 "    ../configure \\\n      --enable-libusb \\\n      --disable-debug-info \\\n")
 
 
 def sha(data):
@@ -49,7 +53,8 @@ class LockTest(unittest.TestCase):
         paths = {e["path"] for e in lock["recipe"]}
         self.assertTrue(set(runtime.RECIPE_FILES) <= paths)
         self.assertIn(runtime.IDENTITY_PATCH, paths)
-        self.assertEqual(len(lock["archives"]), 26)
+        self.assertEqual(len(lock["archives"]), 27)
+        self.assertIn(runtime.SPICE_PROTOCOL, lock["archives"])
 
     def test_verify_tree(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -97,12 +102,34 @@ class OverlayTest(unittest.TestCase):
             with self.assertRaises(runtime.Error):
                 runtime.insert_overlay_patches(text, [("x.patch", SHA_A)])
 
+    def test_spice_protocol_inserted(self):
+        lines = runtime.insert_spice_protocol("\n" + SPICE_ANCHORS).splitlines()
+        name = runtime.SPICE_PROTOCOL["name"]
+        self.assertIn(f'  "{runtime.SPICE_PROTOCOL["sha256"]}" "$archive_dir/{name}"', lines)
+        extract = lines.index(f'tar -xf "$archive_dir/{name}" -C "$source_parent"')
+        self.assertEqual(lines[extract - 3], 'tar -xzf "$qemu_archive" -C "$source_parent"')
+        self.assertIn('pkg_config_libdir="$slirp_root/lib/pkgconfig:$libusb_root/lib/pkgconfig'
+                      ':$spice_protocol_root/share/pkgconfig"', lines)
+        install = lines.index('python3 "$meson" install -C "$spice_protocol_source/build" --no-rebuild')
+        self.assertGreater(install, lines.index("require_private_pkg_version libusb-1.0 1.0.30"))
+        self.assertEqual(lines[install + 1], "require_private_pkg_version spice-protocol 0.14.5")
+        usb = lines.index("      --enable-libusb \\")
+        self.assertEqual(lines[usb + 1:usb + 3],
+                         ["      --enable-spice-protocol \\", "      --disable-debug-info \\"])
+
+    def test_spice_protocol_anchor_missing_or_repeated(self):
+        lines = SPICE_ANCHORS.splitlines(keepends=True)
+        for anchor in lines[:3] + lines[4:5]:
+            for text in (SPICE_ANCHORS.replace(anchor, ""), SPICE_ANCHORS + anchor):
+                with self.assertRaises(runtime.Error):
+                    runtime.insert_spice_protocol(text)
+
     def test_staged_script_lists_overlay_patches(self):
         lock = runtime.load_lock()
         upstream_sha = next(e["sha256"] for e in lock["recipe"]
                             if e["path"] == runtime.IDENTITY_PATCH)
         script = (f"identity_patch_sha256={upstream_sha}\n"
-                  f"{runtime.LAST_QEMU_PATCH}\n")
+                  f"{runtime.LAST_QEMU_PATCH}\n" + SPICE_ANCHORS)
         with tempfile.TemporaryDirectory() as tmp:
             recipe = Path(tmp)
             (recipe / runtime.BUILD_SCRIPT).parent.mkdir(parents=True)
@@ -113,6 +140,7 @@ class OverlayTest(unittest.TestCase):
             extras = runtime.extra_overlay_patches()
             self.assertIn(runtime.OVERLAY_DIR / "qemu-cocoa-window-master.patch", extras)
             self.assertEqual(sorted(extras), extras)
+            self.assertIn("      --enable-spice-protocol \\\n", staged)
             applied = [line.split()[-1].strip('"') for line in staged.splitlines()
                        if line.startswith("patch -d")]
             self.assertEqual(applied, ["$minimum_guest_size_patch"] + [

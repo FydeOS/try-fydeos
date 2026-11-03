@@ -36,6 +36,11 @@ BOTTLES_SCRIPT = "macos/pinned-runtime-bottles.sh"
 IDENTITY_PATCH = "macos/patches/qemu-cocoa-product-identity.patch"
 OVERLAY_STAGE = "macos/patches/try-fydeos"
 LAST_QEMU_PATCH = 'patch -d "$source_dir" -p1 -f -i "$minimum_guest_size_patch"'
+SPICE_PROTOCOL = {
+    "name": "spice-protocol-0.14.5.tar.xz",
+    "url": "https://www.spice-space.org/download/releases/spice-protocol-0.14.5.tar.xz",
+    "sha256": "baf58449f6e89d19f475899ad5fb9196fdc46c03cc53233f4e39cf2978f9cff7",
+}
 RECIPE_FILES = [
     BUILD_SCRIPT, PREPARE_SCRIPT, BOTTLES_SCRIPT,
     "macos/bundle-macho-dependencies.sh", "macos/verify-macos-compatibility.sh",
@@ -47,6 +52,7 @@ JOBS_ENV = "OMARCHY_RUNTIME_BUILD_JOBS"
 REQUIRED_DEVICES = [
     "virtio-gpu-gl-pci", "virtio-keyboard-pci", "virtio-tablet-pci", "virtio-net-pci",
     "virtio-blk-pci", "intel-hda", "hda-output", "hda-micro", "virtio-rng-pci",
+    "virtio-serial-pci", "virtserialport",
 ]
 TOOLS = ["awk", "bash", "chmod", "codesign", "curl", "ditto", "file", "find", "grep",
          "install", "install_name_tool", "mkdir", "mktemp", "otool", "patch", "pkg-config",
@@ -169,7 +175,7 @@ def make_lock(upstream, ref):
         for ref_path in re.findall(r"\$native_dir/([A-Za-z0-9_./-]+)", script):
             if ref_path != ".build" and f"macos/{ref_path}" not in entries:
                 raise Error(f"recipe script reads unlocked file: macos/{ref_path}")
-    archives = script_archives(build) + bottle_archives(show(BOTTLES_SCRIPT))
+    archives = script_archives(build) + bottle_archives(show(BOTTLES_SCRIPT)) + [SPICE_PROTOCOL]
     by_name = {a["name"]: a for a in archives}
     if len(by_name) != len(archives):
         raise Error("duplicate archive names")
@@ -332,6 +338,35 @@ def insert_overlay_patches(text, patches):
     return substitute_once(text, LAST_QEMU_PATCH, "\n".join(lines))
 
 
+def insert_spice_protocol(text):
+    """Build QEMU's qemu-vdagent chardev against private spice-protocol headers."""
+    name = SPICE_PROTOCOL["name"]
+    root = name.removesuffix(".tar.xz")
+    version = root.removeprefix("spice-protocol-")
+    extract = 'tar -xzf "$qemu_archive" -C "$source_parent"\n'
+    text = substitute_once(text, extract, extract + "\n".join([
+        f'obtain_and_verify "spice-protocol {version}" "{SPICE_PROTOCOL["url"]}" \\',
+        f'  "{SPICE_PROTOCOL["sha256"]}" "$archive_dir/{name}"',
+        f'tar -xf "$archive_dir/{name}" -C "$source_parent"',
+        f'spice_protocol_source="$source_parent/{root}"',
+        'spice_protocol_root="$dependency_root/spice-protocol"', ""]))
+    text = substitute_once(text, ':$libusb_root/lib/pkgconfig"\n',
+                           ':$libusb_root/lib/pkgconfig:$spice_protocol_root/share/pkgconfig"\n')
+    require = "\nrequire_private_pkg_version libusb-1.0 1.0.30\n"
+    text = substitute_once(text, require, require + "\n".join([
+        'meson="$tool_root/$meson_root/meson.py"',
+        f'log "Installing spice-protocol {version} headers"',
+        'env PKG_CONFIG_PATH= PKG_CONFIG_LIBDIR="$pkg_config_libdir" \\',
+        '  PATH="$(dirname "$ninja"):$PATH" \\',
+        '  python3 "$meson" setup "$spice_protocol_source/build" "$spice_protocol_source" \\',
+        '    --prefix="$spice_protocol_root" --libdir=lib --wrap-mode=nodownload',
+        '"$ninja" -C "$spice_protocol_source/build"',
+        'python3 "$meson" install -C "$spice_protocol_source/build" --no-rebuild',
+        f"require_private_pkg_version spice-protocol {version}", ""]))
+    usb = "      --enable-libusb \\\n"
+    return substitute_once(text, usb, usb + "      --enable-spice-protocol \\\n")
+
+
 def apply_overlay(recipe, lock):
     upstream_sha = next(e["sha256"] for e in lock["recipe"] if e["path"] == IDENTITY_PATCH)
     overlay_sha = sha256_file(OVERLAY)
@@ -346,7 +381,7 @@ def apply_overlay(recipe, lock):
         data = path.read_bytes()
         (recipe / OVERLAY_STAGE / path.name).write_bytes(data)
         staged.append((path.name, sha256_bytes(data)))
-    after = insert_overlay_patches(after, staged)
+    after = insert_spice_protocol(insert_overlay_patches(after, staged))
     script.write_text(after)
     patches = {str(OVERLAY.relative_to(ROOT)): overlay_sha}
     patches.update({str((OVERLAY_DIR / name).relative_to(ROOT)): sha for name, sha in staged})
@@ -396,7 +431,8 @@ def probe(qemu):
             output([qemu, "-machine", "none", "-accel", "qtest", "-chardev", "help"])),
     }
     result["ok"] = (all(result["devices"].values()) and result["accel_hvf"]
-                    and result["display_cocoa"] and result["audiodev_sdl"])
+                    and result["display_cocoa"] and result["audiodev_sdl"]
+                    and result["chardev_qemu_vdagent"])
     return result
 
 
