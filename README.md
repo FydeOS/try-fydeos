@@ -4,7 +4,8 @@ Run FydeOS on a Mac or a Windows PC without installing it. Try FydeOS
 wraps QEMU and the host's hypervisor around the stock FydeOS vmware image,
 the same image FydeOS publishes for VMware: `arm64-vmware-io` on Apple
 Silicon, `amd64-vmware-io` on x86-64 Windows. The app downloads that image
-at first launch and converts it itself. A Linux version is planned.
+at first launch and converts it itself. The clipboard is shared with the
+host (text, both directions). A Linux version is planned.
 
 Modeled on [Try Omarchy](https://tryomarchy.com) (MIT). The QEMU runtimes
 are built from Try Omarchy's recipes, pinned by commit and hash, with this

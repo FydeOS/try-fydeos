@@ -35,7 +35,8 @@ fresh (D1).
   grows its stateful partition into the free space on first boot (D14, D9).
   No image is bundled or committed.
 - **QEMU contract**: virtio block, net, GPU with VirGL, keyboard and
-  tablet, Intel HDA audio, a serial console log, QMP for lifecycle. The
+  tablet, Intel HDA audio, a vdagent channel for the clipboard (text,
+  both directions, D15), a serial console log, QMP for lifecycle. The
   pointer is `virtio-tablet-pci`, which works because of guest kernel patch
   025 (D4). Platform contracts differ only in machine type, accelerator,
   display backend and firmware files.

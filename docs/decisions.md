@@ -202,3 +202,36 @@ Measured: the Windows exe went from 1.65 GB to 51 MB, the Mac app from
 could not boot under Try FydeOS because its kernel lacked virtio; the
 v23.1 images carry the same drivers as our own builds, which is why this
 split became possible.
+
+## D15. Clipboard sharing over QEMU's built-in vdagent, text only (2026-11-03)
+
+Both launchers add `-chardev qemu-vdagent,clipboard=on,mouse=off` with a
+`virtio-serial-pci` controller and a `virtserialport` named
+`com.redhat.spice.0`. The guest half already ships in the v23.1 images:
+Yang Tsao's port of spice-vdagent to the vmware boards (project-vmware,
+2026-08) with a Wayland backend that drives `wl-copy`/`wl-paste` against
+Chrome's exo socket, plus Chromium patch 0172 giving exo the data-control
+protocol; its only requirement is that port name, and its hypervisor gate
+(DMI or device-tree saying "qemu") passes on both machines. `mouse=off` is
+mandatory: with the vdagent pointer enabled QEMU routes absolute pointer
+events through the agent instead of the virtio tablet.
+
+QEMU terminates the vdagent protocol itself and hands the data to its
+clipboard core, so no SPICE server, display or client is involved; the
+only build cost is the header-only spice-protocol package, now pinned in
+both runtime locks and configured with `--enable-spice-protocol`. The
+Cocoa backend already carries a clipboard peer. SDL2 has none upstream
+(two proposals, 2023 and 2025, never merged), so the Windows runtime adds
+one as the overlay patch `qemu-sdl-clipboard.patch`: a host copy is
+announced to the guest and handed over on request, a guest copy is
+fetched at once and written to the host clipboard, and the text the peer
+last wrote is remembered so a backend that reports its own writes does
+not bounce them back. SDL on Windows only re-checks the host clipboard
+when the QEMU window gains focus, which still covers copying elsewhere
+and clicking back into the VM.
+
+Text only, both directions: QEMU's clipboard core has a single content
+type, so images would need QEMU changes. Rejected: Try Omarchy's own
+bridges (JSON over a private virtio port on macOS, two slirp TCP ports on
+Windows, each with a custom guest daemon), because they would add guest
+code to the FydeOS image for no gain over the agent it already ships.
