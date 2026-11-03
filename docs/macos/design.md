@@ -85,6 +85,9 @@ written fresh.
 -audiodev sdl,id=audio -device intel-hda,id=hda,romfile=
 -device hda-output,bus=hda.0,audiodev=audio          (hda-micro when the microphone is opted in)
 -object rng-random,id=rng,filename=/dev/urandom -device virtio-rng-pci,rng=rng,romfile=
+-chardev qemu-vdagent,id=vdagent,clipboard=on,mouse=off
+-device virtio-serial-pci,id=vserial,romfile=
+-device virtserialport,chardev=vdagent,name=com.redhat.spice.0
 -serial file:<console.log> -monitor none
 -qmp unix:<qmp.sock>,server=on,wait=off
 -add-fd fd=<lock>,set=1,opaque=storage-lock
@@ -92,6 +95,10 @@ written fresh.
 
 `gl=es` remains available as a diagnostic switch. See `../decisions.md` for
 why `gl=on` is the default and why the tablet is virtio, not USB.
+
+The vdagent channel is the host clipboard bridge (text only, both
+directions) for the spice-vdagent the image ships; `mouse=off` keeps
+pointer input on the virtio tablet.
 
 ### Launcher: Swift, QEMU owns the window
 

@@ -36,6 +36,9 @@ func values(_ argv: [String], _ option: String) -> [String] {
         "-audiodev", "sdl,id=audio", "-device", "intel-hda,id=hda,romfile=",
         "-device", "hda-output,bus=hda.0,audiodev=audio",
         "-object", "rng-random,id=rng,filename=/dev/urandom", "-device", "virtio-rng-pci,rng=rng,romfile=",
+        "-chardev", "qemu-vdagent,id=vdagent,clipboard=on,mouse=off",
+        "-device", "virtio-serial-pci,id=vserial,romfile=",
+        "-device", "virtserialport,chardev=vdagent,name=com.redhat.spice.0",
         "-serial", "file:/vm/runs/1/console.log", "-monitor", "none",
         "-qmp", "unix:/vm/qmp.sock,server=on,wait=off",
         "-add-fd", "fd=3,set=1,opaque=storage-lock",
@@ -46,9 +49,11 @@ func values(_ argv: [String], _ option: String) -> [String] {
     let argv = try config().argv(host: host)
     let devices = values(argv, "-device").map { String($0.split(separator: ",")[0]) }
     #expect(devices == ["virtio-blk-pci", "virtio-net-pci", "virtio-gpu-gl-pci", "virtio-keyboard-pci",
-                        "virtio-tablet-pci", "intel-hda", "hda-output", "virtio-rng-pci"])
+                        "virtio-tablet-pci", "intel-hda", "hda-output", "virtio-rng-pci",
+                        "virtio-serial-pci", "virtserialport"])
     #expect(!argv.contains { $0.lowercased().contains("usb") })
-    #expect(!argv.contains { $0.contains("virtio-mouse") || $0.contains("vdagent") })
+    #expect(!argv.contains { $0.contains("virtio-mouse") })
+    #expect(values(argv, "-chardev") == ["qemu-vdagent,id=vdagent,clipboard=on,mouse=off"])
 }
 
 @Test func optionsChangeOnlyTheirArguments() throws {
