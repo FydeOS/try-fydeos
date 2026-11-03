@@ -57,6 +57,7 @@ Two findings that shape the design:
   dm-verity on release images; console on `ttyS0`.
 - Guest support already in the image: Mesa VirGL (mesa-reven 26.1.8),
   virtio block/net/input built in, virtio-gpu and HDA as modules,
+  spice-vdagent clipboard on virtio port `com.redhat.spice.0`,
   stateful auto-expansion on first boot, kernel patches 025/026 and
   chromium 0173 from `project-vmware` (shared with arm64).
 - Guest-side changes live in the FydeOS overlays, never here. Open: the
@@ -149,9 +150,17 @@ The fallback remains pinned at the top level of `windows/runtime.lock.json`:
 -audiodev sdl,id=audio -device intel-hda,id=hda,romfile=,addr=0x1b
 -device hda-output,bus=hda.0,audiodev=audio
 -device virtio-rng-pci,id=rng,romfile=,addr=0x8
+-chardev qemu-vdagent,id=vdagent,clipboard=on,mouse=off
+-device virtio-serial-pci,id=vserial,romfile=,addr=0x9
+-device virtserialport,chardev=vdagent,name=com.redhat.spice.0
 -serial file:<console.log> -D <qemu.log> -monitor none
 -qmp unix:<vm>\qmp.sock,server=on,wait=off
 ```
+
+The vdagent channel is the host clipboard bridge (text only, both
+directions; SDL on Windows re-reads the host clipboard when the QEMU window
+gains focus) for the spice-vdagent the image ships; `mouse=off` keeps
+pointer input on the virtio tablet.
 
 Differences from the Mac contract and why: `q35`/WHPX/`-cpu host` (the
 runtime's patch 0019 honours the CPU model, `-cpu host` works on the NUC;

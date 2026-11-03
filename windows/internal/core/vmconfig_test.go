@@ -47,6 +47,9 @@ func TestArgvMatchesContract(t *testing.T) {
 		"-audiodev", "sdl,id=audio", "-device", "intel-hda,id=hda,romfile=,addr=0x1b",
 		"-device", "hda-output,bus=hda.0,audiodev=audio",
 		"-device", "virtio-rng-pci,id=rng,romfile=,addr=0x8",
+		"-chardev", "qemu-vdagent,id=vdagent,clipboard=on,mouse=off",
+		"-device", "virtio-serial-pci,id=vserial,romfile=,addr=0x9",
+		"-device", "virtserialport,chardev=vdagent,name=com.redhat.spice.0",
 		"-serial", `file:D:\vm\runs\1\console.log`, "-D", `D:\vm\runs\1\qemu.log`, "-monitor", "none",
 		"-qmp", `unix:D:\vm\qmp.sock,server=on,wait=off`,
 	}

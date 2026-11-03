@@ -163,6 +163,9 @@ func (c *VMConfig) Argv(host HostInfo) ([]string, error) {
 		"-audiodev", "sdl,id=audio", "-device", "intel-hda,id=hda,romfile=,addr=0x1b",
 		"-device", codec + ",bus=hda.0,audiodev=audio",
 		"-device", "virtio-rng-pci,id=rng,romfile=,addr=0x8",
+		"-chardev", "qemu-vdagent,id=vdagent,clipboard=on,mouse=off",
+		"-device", "virtio-serial-pci,id=vserial,romfile=,addr=0x9",
+		"-device", "virtserialport,chardev=vdagent,name=com.redhat.spice.0",
 		"-serial", "file:" + p.Console, "-D", p.QEMULog, "-monitor", "none",
 		"-qmp", "unix:" + p.QMPSocket + ",server=on,wait=off",
 	}, nil
