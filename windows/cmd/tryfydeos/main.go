@@ -177,6 +177,7 @@ func cmdDoctor(o *options) (int, error) {
 	report("info", fmt.Sprintf("host %d logical CPUs, %d MiB; VM range cpus %d...%d, memory %d...%d MiB",
 		host.LogicalCPUs, host.MemoryMiB, core.MinCPUs, host.LogicalCPUs, core.MinMemoryMiB, host.MemoryMiB-core.HostReserveMiB))
 	loc := o.loc
+	report("info", "edition "+core.Edition+", app data "+loc.AppData)
 	if p := loc.Payload; p != nil {
 		report("info", fmt.Sprintf("payload in %s at offset %d:", p.Path, p.Start))
 		for _, e := range p.Entries {

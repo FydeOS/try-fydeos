@@ -258,6 +258,14 @@ rawBytes}`. The app asks the release API once at start; when the prepared
 VM's `sha256` differs from the API's checksum, the reset section names the
 newer version and a factory reset installs it.
 
+The com edition is a build-time choice (`make ... EDITION=com`, which
+sets `core.Edition` through `-ldflags -X`), never a runtime switch. It uses
+`factory/amd64-vmware-com.json`: the `-com` OVA and the release API at
+`release-api.fydeos.com` (`l=zh`), same board and disk facts. The exe is
+`Try FydeOS-<version>-com.exe`, with the same version resource; the About
+box shows "Version <version> (com)" and `tryfydeos doctor` prints the
+edition.
+
 ### Packaging (D-W2, D-W3, revised 2026-11-02)
 
 One file for the user: `dist/Try FydeOS-<version>.exe` (about 51 MB),

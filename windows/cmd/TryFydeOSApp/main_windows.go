@@ -114,6 +114,13 @@ func (m *startMenu) label(text string, grey bool, style uintptr) uintptr {
 	return h
 }
 
+func editionSuffix() string {
+	if core.Edition == "com" {
+		return " (com)"
+	}
+	return ""
+}
+
 // Button and group box captions treat & as a mnemonic prefix.
 func buttonText(s string) string { return strings.ReplaceAll(s, "&", "&&") }
 
@@ -550,7 +557,7 @@ func (m *startMenu) wndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 	case wmSysCommand:
 		switch wParam & 0xFFF0 {
 		case sysAbout:
-			messageBox(hwnd, app.L(app.WindowTitle)+"\n"+app.L(app.Version, appVersion)+"\n\n"+app.L(app.AboutCredits), app.L(app.MenuAbout), mbIconInfo)
+			messageBox(hwnd, app.L(app.WindowTitle)+"\n"+app.L(app.Version, appVersion)+editionSuffix()+"\n\n"+app.L(app.AboutCredits), app.L(app.MenuAbout), mbIconInfo)
 			return 0
 		case sysLogs:
 			m.openLogs()

@@ -25,8 +25,12 @@ make win-test      # go vet + go test ./... (OS-independent parts, fake QEMU)
 make win-build     # out/win-build/tryfydeos.exe and "Try FydeOS.exe" (GOOS=windows, no cgo)
 make win-rsrc      # re-render TryFydeOS.ico and rebuild rsrc_windows_amd64.syso
 make win-dist      # dist/Try FydeOS-<version>.exe + .sha256 (see Packaging)
-make win-sync      # exe, factory/amd64-vmware-io.json and windows/ -> NUC D:\try-fydeos\dev\
+make win-sync      # exe, factory/amd64-vmware-$(EDITION).json and windows/ -> NUC D:\try-fydeos\dev\
 ```
+
+`EDITION=com` on `win-build`, `win-dist` and `win-sync` builds the com
+edition: spec `factory/amd64-vmware-com.json` (`-com` image, .com release
+API) and `dist/Try FydeOS-<version>-com.exe`. The default `io` is unchanged.
 
 No image is built or copied: the launcher downloads the published VMware
 image on the first Launch. To test without downloading, copy an `.ova` (or a
@@ -52,7 +56,8 @@ Windows-tagged tests run on the NUC from a copy of this directory:
 `D:\Go\bin\go.exe test ./...` in `D:\try-fydeos\dev\src`.
 
 Defaults without the overrides: workspace `%LOCALAPPDATA%\Try FydeOS\VM\v1`,
-runtime `runtime\` and spec `factory\amd64-vmware-io.json` next to the exe;
+runtime `runtime\` and spec `factory\amd64-vmware-io.json`
+(`amd64-vmware-com.json` in the com edition) next to the exe;
 `%LOCALAPPDATA%\Try FydeOS\preferences.json` may set `workspace` and
 `forwards` (`["2201:22"]`); `TRY_FYDEOS_FORWARDS` takes `2201:22,8080:80`.
 

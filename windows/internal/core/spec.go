@@ -13,8 +13,8 @@ import (
 	"strings"
 )
 
-// SpecFileName is the factory spec of the image this port boots.
-const SpecFileName = "amd64-vmware-io.json"
+// SpecFileName is the factory spec of the image this edition boots.
+func SpecFileName() string { return "amd64-vmware-" + Edition + ".json" }
 
 // FactoryImage is the pinned download a new VM is converted from when the
 // release API offers nothing else.

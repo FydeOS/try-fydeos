@@ -10,6 +10,7 @@ WORKSPACE ?=
 RUN_ARGS ?=
 APP_ARGS ?=
 DMG_ARGS ?=
+EDITION ?= io
 TRYFYDEOS := macos/.build/release/tryfydeos
 WS_ARG = $(if $(WORKSPACE),--workspace "$(WORKSPACE)")
 
@@ -18,6 +19,7 @@ MAC_ONLY = @test "$$(uname -s)" = Darwin || { echo "make $@: must run on the App
 .PHONY: help sync doctor fetch runtime firmware test app-build app-test prepare run inspect icon app app-run dmg dmg-stage
 
 help:
+	@echo "EDITION=com     build the com edition (.com images and release API); default io"
 	@echo "make sync       copy the tree from the workstation to the Mac"
 	@echo "make doctor     check host, pins, cache, firmware and runtime (Mac)"
 	@echo "make fetch      fetch and verify pinned archives and recipe (Mac; SEED=dir OFFLINE=1)"
@@ -108,10 +110,10 @@ test:
 NUC_HOST ?= wei@localhost
 NUC_PORT ?= 2223
 NUC_DIR ?= D:/try-fydeos/dev
-WIN_SPEC ?= factory/amd64-vmware-io.json
+WIN_SPEC ?= factory/amd64-vmware-$(EDITION).json
 # windows/versioninfo.rc is the version's source of truth.
 WIN_VERSION = $(shell sed -n 's/.*"ProductVersion", "\(.*\)".*/\1/p' windows/versioninfo.rc)
-WIN_DIST = dist/Try FydeOS-$(WIN_VERSION).exe
+WIN_DIST = dist/Try FydeOS-$(WIN_VERSION)$(if $(filter com,$(EDITION)),-com,).exe
 
 # own: our build pinned in windows/runtime.lock.json; omarchy: Try Omarchy's published zip.
 WIN_RUNTIME ?= own
@@ -126,8 +128,8 @@ win-runtime-build:
 
 win-build:
 	mkdir -p out/win-build
-	cd windows && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o ../out/win-build/tryfydeos.exe ./cmd/tryfydeos
-	cd windows && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-H windowsgui -s -w" -o "../out/win-build/Try FydeOS.exe" ./cmd/TryFydeOSApp
+	cd windows && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w -X tryfydeos.io/windows/internal/core.Edition=$(EDITION)" -o ../out/win-build/tryfydeos.exe ./cmd/tryfydeos
+	cd windows && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-H windowsgui -s -w -X tryfydeos.io/windows/internal/core.Edition=$(EDITION)" -o "../out/win-build/Try FydeOS.exe" ./cmd/TryFydeOSApp
 
 win-rsrc:
 	windows/scripts/make-rsrc.sh
@@ -137,7 +139,7 @@ win-test:
 
 win-sync: win-build
 	ssh -o BatchMode=yes -p $(NUC_PORT) $(NUC_HOST) 'New-Item -ItemType Directory -Force $(NUC_DIR) | Out-Null; if (Test-Path $(NUC_DIR)/src) { Remove-Item -Recurse -Force $(NUC_DIR)/src }'
-	scp -o BatchMode=yes -P $(NUC_PORT) out/win-build/*.exe factory/amd64-vmware-io.json $(NUC_HOST):$(NUC_DIR)/
+	scp -o BatchMode=yes -P $(NUC_PORT) out/win-build/*.exe $(WIN_SPEC) $(NUC_HOST):$(NUC_DIR)/
 	scp -o BatchMode=yes -r -P $(NUC_PORT) windows $(NUC_HOST):$(NUC_DIR)/src
 
 win-dist: win-build

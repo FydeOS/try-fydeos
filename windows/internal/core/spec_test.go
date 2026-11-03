@@ -8,16 +8,21 @@ import (
 )
 
 func TestLoadFactorySpecFromRepository(t *testing.T) {
-	path := filepath.Join("..", "..", "..", "factory", SpecFileName)
-	if _, err := os.Stat(path); err != nil {
-		t.Skip("not in the repository layout:", err)
-	}
-	spec, err := LoadFactorySpec(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if spec.Board != "amd64-vmware-io" || spec.DiskBytes != 64<<30 || !strings.HasSuffix(spec.Image.URL, ".ova") || spec.Release.Board != "amd64-vmware" {
-		t.Fatalf("unexpected spec %+v", spec)
+	defer func() { Edition = "io" }()
+	for _, edition := range []string{"io", "com"} {
+		Edition = edition
+		path := filepath.Join("..", "..", "..", "factory", SpecFileName())
+		if _, err := os.Stat(path); err != nil {
+			t.Skip("not in the repository layout:", err)
+		}
+		spec, err := LoadFactorySpec(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if spec.Board != "amd64-vmware-io" || spec.DiskBytes != 64<<30 || !strings.HasSuffix(spec.Image.URL, "-"+edition+".ova") ||
+			spec.Release.Board != "amd64-vmware" || !strings.Contains(spec.Release.API, "fydeos."+edition+"/") {
+			t.Fatalf("unexpected %s spec %+v", edition, spec)
+		}
 	}
 }
 

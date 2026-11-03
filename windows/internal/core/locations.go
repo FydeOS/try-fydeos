@@ -14,6 +14,10 @@ import (
 	"tryfydeos.io/windows/internal/payload"
 )
 
+// Edition is "io" or "com" (the fydeos.com images and release API), set at build time with
+// -ldflags "-X tryfydeos.io/windows/internal/core.Edition=com".
+var Edition = "io"
+
 // QEMUNames in order of preference: the GUI-subsystem build opens no console window.
 var QEMUNames = []string{"qemu-system-x86_64w.exe", "qemu-system-x86_64.exe"}
 
@@ -187,7 +191,7 @@ func DiscoverLocations(getenv func(string) string, exeDir string, p *payload.Pay
 	l := &Locations{
 		AppData: filepath.Join(local, "Try FydeOS"),
 		Runtime: filepath.Join(exeDir, "runtime"),
-		Spec:    filepath.Join(exeDir, "factory", SpecFileName),
+		Spec:    filepath.Join(exeDir, "factory", SpecFileName()),
 	}
 	l.Workspace = filepath.Join(l.AppData, "VM", "v1")
 	if p != nil {
@@ -231,7 +235,7 @@ func DiscoverLocations(getenv func(string) string, exeDir string, p *payload.Pay
 	}
 	if v := getenv("TRY_FYDEOS_FACTORY_IMAGE"); v != "" {
 		l.FactoryImageOverride = v
-		l.Spec = filepath.Join(filepath.Dir(v), SpecFileName)
+		l.Spec = filepath.Join(filepath.Dir(v), SpecFileName())
 	}
 	if v := getenv("TRY_FYDEOS_SPEC"); v != "" {
 		l.Spec = v

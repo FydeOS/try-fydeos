@@ -27,8 +27,15 @@ func TestDiscoverLocations(t *testing.T) {
 		t.Fatal(err)
 	}
 	if l.Workspace != filepath.Join(local, "Try FydeOS", "VM", "v1") || l.Runtime != filepath.Join("/app", "runtime") ||
-		l.Spec != filepath.Join("/app", "factory", SpecFileName) || l.LogsDir() != filepath.Join(local, "Try FydeOS", "Logs") {
+		l.Spec != filepath.Join("/app", "factory", SpecFileName()) || l.LogsDir() != filepath.Join(local, "Try FydeOS", "Logs") {
 		t.Fatalf("defaults %+v", l)
+	}
+
+	Edition = "com"
+	com, err := DiscoverLocations(getenv, "/app", nil)
+	Edition = "io"
+	if err != nil || com.Spec != filepath.Join("/app", "factory", "amd64-vmware-com.json") {
+		t.Fatalf("com edition %+v %v", com, err)
 	}
 
 	os.MkdirAll(l.AppData, 0o700)
@@ -49,7 +56,7 @@ func TestDiscoverLocations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if l.Workspace != "/env/vm" || l.Runtime != "/env/runtime" || l.Spec != filepath.Join("/images", SpecFileName) || l.FactoryImageOverride != "/images/x.ova" ||
+	if l.Workspace != "/env/vm" || l.Runtime != "/env/runtime" || l.Spec != filepath.Join("/images", SpecFileName()) || l.FactoryImageOverride != "/images/x.ova" ||
 		!reflect.DeepEqual(l.Forwards, []HostForward{{2202, 22}, {8080, 80}}) {
 		t.Fatalf("environment %+v", l)
 	}
