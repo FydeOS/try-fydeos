@@ -130,6 +130,7 @@ func (l *Locations) FactoryContainer(ctx context.Context, spec *FactorySpec, say
 	dest := filepath.Join(ImageDir(l.AppData), record.FileName)
 	if st, err := os.Stat(dest); err == nil && st.Size() == size {
 		say("using the downloaded image " + dest)
+		pruneImages(ImageDir(l.AppData), record.FileName, say)
 		return dest, record, nil
 	}
 	if err := os.MkdirAll(ImageDir(l.AppData), 0o700); err != nil {
@@ -150,7 +151,28 @@ func (l *Locations) FactoryContainer(ctx context.Context, spec *FactorySpec, say
 		return "", FactoryRecord{}, err
 	}
 	say(fmt.Sprintf("downloaded in %.1f s", time.Since(start).Seconds()))
+	pruneImages(ImageDir(l.AppData), record.FileName, say)
 	return dest, record, nil
+}
+
+// pruneImages removes every file in dir but keep: superseded downloads and
+// stale parts.
+func pruneImages(dir, keep string, say func(string)) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		say("cannot list " + dir + ": " + err.Error())
+		return
+	}
+	for _, e := range entries {
+		if e.Name() == keep || e.IsDir() {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, e.Name())); err != nil {
+			say("cannot remove superseded image " + e.Name() + ": " + err.Error())
+		} else {
+			say("removed superseded image " + e.Name())
+		}
+	}
 }
 
 // DiscoverLocations resolves defaults next to the executable (development

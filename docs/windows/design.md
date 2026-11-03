@@ -220,7 +220,7 @@ pinned runtime in milestone 1.
   `%LOCALAPPDATA%\Try FydeOS\preferences.json` (`forwards`, `workspace`),
   env overrides `TRY_FYDEOS_FORWARDS`, `TRY_FYDEOS_WORKSPACE`,
   `TRY_FYDEOS_FACTORY_IMAGE` (a local `.ova` or `.zip`). Downloaded
-  images: `%LOCALAPPDATA%\Try FydeOS\images\`.
+  image (only the current one): `%LOCALAPPDATA%\Try FydeOS\images\`.
 
 ### Factory image
 
@@ -242,7 +242,9 @@ A new VM is prepared in three steps:
    `.part` file that resumes with `Range` (a 200 answer restarts it), then
    check the sha256; a mismatch deletes the part. An existing file of the
    expected size is used without a download. Needs the image size plus
-   10 GiB free.
+   10 GiB free. The directory keeps only the image the VM is prepared
+   from: once that file is verified or found, superseded downloads and
+   stale parts are removed.
 3. Convert the container's single VMDK (streamOptimized in the OVA,
    monolithicSparse in a VMware zip) into `disk.raw`, writing only
    non-zero grains into the sparse file. The published disk is 50 GiB:

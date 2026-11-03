@@ -210,13 +210,81 @@ func TestFactoryContainerChoosesImage(t *testing.T) {
 	if err != nil || path != filepath.Join(ImageDir(l.AppData), "newer.ova") || rec != want || last != int64(len(newer)) {
 		t.Fatalf("API lists a newer image: %s %+v %v, total %d", path, rec, err, last)
 	}
+	assertImages(t, ImageDir(l.AppData), "newer.ova")
+
+	stray := filepath.Join(ImageDir(l.AppData), "stray.ova")
+	if err := os.WriteFile(stray, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	l.FactoryImageOverride = fixture("test.ova")
 	if path, rec, err := l.FactoryContainer(context.Background(), spec, say, nil); err != nil || path != l.FactoryImageOverride || rec != (FactoryRecord{FileName: "test.ova"}) {
 		t.Fatalf("override: %s %+v %v", path, rec, err)
 	}
+	assertImages(t, ImageDir(l.AppData), "newer.ova", "stray.ova")
 	l.FactoryImageOverride = filepath.Join(t.TempDir(), "missing.ova")
 	if _, _, err := l.FactoryContainer(context.Background(), spec, say, nil); err == nil {
 		t.Fatal("missing override accepted")
 	}
+}
+
+func assertImages(t *testing.T, dir string, want ...string) {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, e := range entries {
+		got = append(got, e.Name())
+	}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("%s holds %v, want %v", dir, got, want)
+	}
+}
+
+func TestFactoryContainerPrunesImages(t *testing.T) {
+	data, sum := testContent()
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/pinned.ova" {
+			http.NotFound(w, r)
+			return
+		}
+		http.ServeContent(w, r, "pinned.ova", time.Time{}, bytes.NewReader(data))
+	}))
+	defer srv.Close()
+	saved := http.DefaultClient
+	http.DefaultClient = srv.Client()
+	defer func() { http.DefaultClient = saved }()
+	spec, _ := testSpec(t)
+	spec.Image = FactoryImage{URL: srv.URL + "/v1/pinned.ova", Bytes: int64(len(data)), SHA256: sum, Version: "pinned"}
+	spec.Release = ReleaseSource{API: srv.URL + "/api", Board: "b"}
+	l := &Locations{AppData: t.TempDir(), AppVersion: "1"}
+	dir := ImageDir(l.AppData)
+	if err := os.MkdirAll(filepath.Join(dir, "keep.dir"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"old.ova", "other.zip.part"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("old"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var said []string
+	say := func(s string) { said = append(said, s) }
+
+	if _, _, err := l.FactoryContainer(context.Background(), spec, say, nil); err != nil {
+		t.Fatal(err)
+	}
+	assertImages(t, dir, "keep.dir", "pinned.ova")
+	if !strings.Contains(strings.Join(said, "\n"), "removed superseded image old.ova") {
+		t.Errorf("said %q", said)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "old.ova"), []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := l.FactoryContainer(context.Background(), spec, say, nil); err != nil {
+		t.Fatal(err)
+	}
+	assertImages(t, dir, "keep.dir", "pinned.ova")
 }
