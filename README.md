@@ -91,6 +91,8 @@ resume and a SHA-256 check, and decodes the VMDK inside into the VM disk,
 cut at the end of the FydeOS image and grown, sparse, to the 64 GiB
 `diskBytes` of the board's spec. The download is kept: factory reset
 deletes the disk and the next launch converts again without downloading.
+Only the download the VM was prepared from is kept; a newer one replaces
+it once verified.
 When the API lists a newer image than the installed one, the start menu
 says so and a factory reset installs it. `TRY_FYDEOS_FACTORY_IMAGE` points
 at a local `.ova` or VMware `.zip` to use instead of a download.

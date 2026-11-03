@@ -181,7 +181,8 @@ download pages read). At first launch the launcher asks the API and takes
 its image when the checksum differs from the pinned one, else the pinned
 one; offline it uses what it has. The download is resumable, verified by
 hash and kept in the app's `images` directory, so a factory reset never
-downloads again. When the API lists a newer image than the one installed,
+downloads again; a newer download replaces the old one once it is
+verified. When the API lists a newer image than the one installed,
 the reset section says so and the reset installs it.
 
 The download is a VMware disk, not a raw image: an `.ova` with a
