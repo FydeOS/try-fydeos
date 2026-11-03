@@ -80,7 +80,7 @@ icon:
 
 app:
 	$(MAC_ONLY)
-	macos/scripts/build-app.sh $(APP_ARGS)
+	macos/scripts/build-app.sh --edition $(EDITION) $(APP_ARGS)
 
 app-run:
 	$(MAC_ONLY)
@@ -88,11 +88,11 @@ app-run:
 
 dmg:
 	$(MAC_ONLY)
-	macos/scripts/package-dmg.sh $(DMG_ARGS)
+	macos/scripts/package-dmg.sh --edition $(EDITION) $(DMG_ARGS)
 
 dmg-stage:
 	$(MAC_ONLY)
-	macos/scripts/package-dmg.sh --stage-only
+	macos/scripts/package-dmg.sh --edition $(EDITION) --stage-only
 
 prepare: app-build
 	$(TRYFYDEOS) prepare $(WS_ARG)

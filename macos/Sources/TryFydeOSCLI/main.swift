@@ -101,6 +101,7 @@ func cmdDoctor(_ o: Options) throws -> Int32 {
     check(host.isAppleSilicon && !host.isTranslated && major >= 15, "Apple Silicon macOS >= 15 (macOS \(host.macOSVersion), native: \(!host.isTranslated))")
     report("info", "host \(host.logicalCores) cores, \(host.memoryMiB) MiB; VM range cpus 4...\(host.logicalCores), memory 4096...\(host.memoryMiB - VMConfig.hostReserveMiB) MiB")
     let loc = try Locations.discover()
+    report("info", "edition \(Edition.current.rawValue)")
     report("info", "repo \(loc.root?.path ?? "-"), bundle resources \(loc.bundleResources?.path ?? "-")")
     let fm = FileManager.default
     if fm.isExecutableFile(atPath: loc.qemu.path) {

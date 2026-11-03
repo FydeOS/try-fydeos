@@ -1,12 +1,15 @@
 #!/bin/bash
 # Assemble and sign dist/Try FydeOS.app; it downloads the FydeOS image at first launch.
+#   --edition io|com       edition to build (default io)
 #   --sign-identity ID     codesign identity (default "-", ad hoc)
 set -euo pipefail
 
-usage() { sed -n '2,3p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { sed -n '2,4p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 identity=-
+edition=io
 while [ $# -gt 0 ]; do
     case "$1" in
+        --edition) [ $# -ge 2 ] || usage; edition=$2; shift ;;
         --sign-identity) [ $# -ge 2 ] || usage; identity=$2; shift ;;
         *) usage ;;
     esac
@@ -18,8 +21,10 @@ repo=$(cd "$(dirname "$0")/../.." && pwd)
 runtime_src="$repo/out/runtime/current/runtime"
 qemu_ent="$repo/runtime/entitlements/qemu.entitlements"
 app_ent="$repo/macos/Resources/TryFydeOS.entitlements"
+case "$edition" in io|com) ;; *) usage ;; esac
 app="$repo/dist/Try FydeOS.app"
 stage="$repo/dist/.Try FydeOS.app.stage"
+spec="$repo/factory/arm64-vmware-$edition.json"
 icon="$repo/macos/.build/TryFydeOS.icns"
 
 say() { echo "build-app: $*"; }
@@ -44,10 +49,13 @@ res="$contents/Resources"
 mkdir -p "$contents/MacOS" "$res/firmware" "$res/factory"
 cp "$bin" "$contents/MacOS/TryFydeOS"
 cp "$repo/macos/Resources/Info.plist" "$contents/Info.plist"
+if [ "$edition" = com ]; then
+    plutil -replace TryFydeOSEdition -string com "$contents/Info.plist"
+fi
 cp "$icon" "$res/TryFydeOS.icns"
 ditto "$runtime_src" "$res/runtime"
 cp "$repo"/firmware/*.fd "$res/firmware/"
-cp "$repo/factory/spec.json" "$res/factory/spec.json"
+cp "$spec" "$res/factory/spec.json"
 
 # Launch Services labels the Dock tile and menu bar with the executable's file name.
 mv "$res/runtime/bin/qemu-system-aarch64" "$res/runtime/bin/Try FydeOS"

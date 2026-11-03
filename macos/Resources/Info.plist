@@ -34,6 +34,8 @@
     <string>NSApplication</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>FydeOS can use your microphone when you turn on Microphone in Try FydeOS.</string>
+    <key>TryFydeOSEdition</key>
+    <string>io</string>
     <key>NSHumanReadableCopyright</key>
     <string>© 2026 FydeOS. Runtime recipe from Try Omarchy (MIT); QEMU is GPLv2.</string>
 </dict>
