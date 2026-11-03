@@ -61,6 +61,7 @@ public struct Locations: Sendable {
         func fileSize(_ url: URL) -> Int64? { (try? fm.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value }
         if fileSize(dest) == size {
             say("using the downloaded image \(dest.path)")
+            pruneImages(keeping: record.fileName, say: say)
             return (dest, record)
         }
         try fm.createDirectory(at: images, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
@@ -72,7 +73,23 @@ public struct Locations: Sendable {
         let start = Date()
         try await download(url: record.url, size: size, sha256: record.sha256, to: dest, progress: progress)
         say(String(format: "downloaded in %.1f s", Date().timeIntervalSince(start)))
+        pruneImages(keeping: record.fileName, say: say)
         return (dest, record)
+    }
+
+    private func pruneImages(keeping name: String, say: (String) -> Void) {
+        let fm = FileManager.default
+        for entry in (try? fm.contentsOfDirectory(atPath: images.path)) ?? [] where entry != name {
+            let url = images.appendingPathComponent(entry)
+            var isDir: ObjCBool = false
+            guard fm.fileExists(atPath: url.path, isDirectory: &isDir), !isDir.boolValue else { continue }
+            do {
+                try fm.removeItem(at: url)
+                say("removed superseded image \(entry)")
+            } catch {
+                say("could not remove \(url.path): \(error)")
+            }
+        }
     }
 
     /// App bundle `Contents/Resources` first, then the repository layout; the

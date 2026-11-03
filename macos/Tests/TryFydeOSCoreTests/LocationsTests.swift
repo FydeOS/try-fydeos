@@ -100,6 +100,49 @@ final class Listing: @unchecked Sendable {
     await #expect(throws: ConfigError.self) { try await loc.factoryContainer(spec: spec, say: { _ in }) }
 }
 
+@Test func factoryContainerKeepsOnlyTheChosenImage() async throws {
+    let (pinned, pinnedSum) = testContent()
+    let server = try HTTPTestServer { request in
+        request.path == "/v1/pinned.zip" ? .ranged(pinned, request) : HTTPResponse(status: 503)
+    }
+    defer { server.stop() }
+    let root = try tempDir()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let spec = testSpec(url: server.baseURL + "/v1/pinned.zip", bytes: Int64(pinned.count), sha256: pinnedSum, api: server.baseURL + "/api")
+    var loc = Locations(root: nil, bundleResources: nil, runtime: root, firmware: root, factorySpec: root, factoryImageOverride: nil,
+                        images: root.appendingPathComponent("images"), appVersion: "1")
+    let fm = FileManager.default
+    let images = loc.images
+    func entries() throws -> [String] { try fm.contentsOfDirectory(atPath: images.path).sorted() }
+    func downloads() -> Int { server.requests.filter { $0.path == "/v1/pinned.zip" }.count }
+    let pinnedFile = images.appendingPathComponent("pinned.zip")
+    try fm.createDirectory(at: images.appendingPathComponent("keep.d"), withIntermediateDirectories: true)
+    try touch(images.appendingPathComponent("old.ova"))
+    try touch(images.appendingPathComponent("other.zip.part"))
+    try pinned.write(to: pinnedFile)
+
+    var lines: [String] = []
+    var (path, _) = try await loc.factoryContainer(spec: spec, say: { lines.append($0) })
+    #expect(path == pinnedFile && downloads() == 0)
+    #expect(try entries() == ["keep.d", "pinned.zip"])
+    #expect(lines.contains("removed superseded image old.ova") && lines.contains("removed superseded image other.zip.part"))
+
+    try fm.removeItem(at: pinnedFile)
+    try touch(images.appendingPathComponent("old.ova"))
+    lines = []
+    (path, _) = try await loc.factoryContainer(spec: spec, say: { lines.append($0) })
+    #expect(path == pinnedFile && downloads() == 1)
+    #expect(try entries() == ["keep.d", "pinned.zip"])
+    #expect(try Data(contentsOf: pinnedFile) == pinned)
+    #expect(lines.last == "removed superseded image old.ova")
+
+    try touch(images.appendingPathComponent("stray.ova"))
+    loc.factoryImageOverride = vmdkFixture("test.ova")
+    (path, _) = try await loc.factoryContainer(spec: spec, say: { _ in })
+    #expect(path == vmdkFixture("test.ova"))
+    #expect(try entries() == ["keep.d", "pinned.zip", "stray.ova"])
+}
+
 @Test func qemuAcceptsEitherBinaryName() throws {
     let root = try tempDir()
     defer { try? FileManager.default.removeItem(at: root) }

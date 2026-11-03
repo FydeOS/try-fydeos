@@ -157,7 +157,9 @@ A new VM is prepared in three steps:
    restarts it), then check the sha256; a mismatch deletes the part. An
    existing file of the expected size is used without a download, so a
    factory reset converts again from `images/`. Needs the image size plus
-   10 GiB free.
+   10 GiB free. `images/` keeps only the image the VM is prepared from:
+   once the chosen file is verified (or found complete), superseded
+   downloads and stale `.part` files are removed.
 3. Convert: `/usr/bin/tar` (libarchive reads tar and zip) streams the
    container's single `*.vmdk` member into the decoder, which reads it
    strictly forward: monolithicSparse in the zip, streamOptimized in an
