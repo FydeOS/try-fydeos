@@ -1,0 +1,186 @@
+From: Try FydeOS contributors
+Subject: [PATCH] sdl: share the host text clipboard with the guest
+
+Applies after qemu-sdl-window-frame.patch.
+
+SDL2 has no clipboard peer, so qemu-vdagent had nobody to talk to on the
+host side. Register one, after ui/gtk-clipboard.c and ui/cocoa.m, for the
+CLIPBOARD selection and plain text. A host copy (SDL_CLIPBOARDUPDATE)
+announces text to the guest and hands it over only when the guest asks;
+a guest copy is requested from the guest at once and written to the host
+clipboard when it arrives. The text the peer last wrote is remembered so
+a backend that reports its own writes does not bounce them back.
+
+diff --git a/include/ui/sdl2.h b/include/ui/sdl2.h
+index 72d4abe2..a1d3fc0a 100644
+--- a/include/ui/sdl2.h
++++ b/include/ui/sdl2.h
+@@ -74,6 +74,9 @@ void sdl2_process_key(struct sdl2_console *scon,
+                       SDL_KeyboardEvent *ev);
+ void sdl2_release_modifiers(struct sdl2_console *scon);
+ 
++void sdl2_clipboard_init(void);
++void sdl2_clipboard_update(void);
++
+ void sdl2_2d_update(DisplayChangeListener *dcl,
+                     int x, int y, int w, int h);
+ void sdl2_2d_switch(DisplayChangeListener *dcl,
+diff --git a/ui/meson.build b/ui/meson.build
+index 69404bca..e341802b 100644
+--- a/ui/meson.build
++++ b/ui/meson.build
+@@ -123,6 +123,7 @@ if sdl.found()
+   sdl_ss = ss.source_set()
+   sdl_ss.add(sdl, sdl_image, pixman, glib, files(
+     'sdl2-2d.c',
++    'sdl2-clipboard.c',
+     'sdl2-input.c',
+     'sdl2.c',
+   ))
+diff --git a/ui/sdl2-clipboard.c b/ui/sdl2-clipboard.c
+new file mode 100644
+index 00000000..298225b1
+--- /dev/null
++++ b/ui/sdl2-clipboard.c
+@@ -0,0 +1,119 @@
++/*
++ * QEMU SDL display driver -- clipboard support
++ *
++ * This program is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 2 of the License, or
++ * (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, see <http://www.gnu.org/licenses/>.
++ */
++
++#include "qemu/osdep.h"
++#include "ui/clipboard.h"
++#include "ui/console.h"
++#include "ui/sdl2.h"
++
++static void sdl2_clipboard_notify(Notifier *notifier, void *data);
++static void sdl2_clipboard_request(QemuClipboardInfo *info,
++                                   QemuClipboardType type);
++
++static QemuClipboardPeer sdl2_clipboard_peer = {
++    .name = "sdl2",
++    .notifier = { .notify = sdl2_clipboard_notify },
++    .request = sdl2_clipboard_request,
++};
++
++/*
++ * The text this peer last put on the host clipboard. Some SDL backends
++ * report their own writes as SDL_CLIPBOARDUPDATE; comparing the text,
++ * not a flag, keeps a backend that does not from swallowing the next
++ * real update.
++ */
++static char *sdl2_clipboard_written;
++
++static void sdl2_clipboard_update_info(QemuClipboardInfo *info)
++{
++    QemuClipboardContent *text = &info->types[QEMU_CLIPBOARD_TYPE_TEXT];
++
++    if (info->owner == &sdl2_clipboard_peer ||
++        info->selection != QEMU_CLIPBOARD_SELECTION_CLIPBOARD ||
++        !text->available) {
++        return;
++    }
++
++    if (!text->data) {
++        qemu_clipboard_request(info, QEMU_CLIPBOARD_TYPE_TEXT);
++        return;
++    }
++
++    g_free(sdl2_clipboard_written);
++    sdl2_clipboard_written = g_strndup(text->data, text->size);
++    SDL_SetClipboardText(sdl2_clipboard_written);
++}
++
++static void sdl2_clipboard_notify(Notifier *notifier, void *data)
++{
++    QemuClipboardNotify *notify = data;
++
++    switch (notify->type) {
++    case QEMU_CLIPBOARD_UPDATE_INFO:
++        sdl2_clipboard_update_info(notify->info);
++        return;
++    case QEMU_CLIPBOARD_RESET_SERIAL:
++        return;
++    }
++}
++
++static void sdl2_clipboard_request(QemuClipboardInfo *info,
++                                   QemuClipboardType type)
++{
++    char *text;
++
++    if (type != QEMU_CLIPBOARD_TYPE_TEXT || !SDL_HasClipboardText()) {
++        return;
++    }
++
++    text = SDL_GetClipboardText();
++    if (text) {
++        qemu_clipboard_set_data(&sdl2_clipboard_peer, info, type,
++                                strlen(text), text, true);
++        SDL_free(text);
++    }
++}
++
++void sdl2_clipboard_update(void)
++{
++    QemuClipboardInfo *info;
++    char *text;
++    bool own;
++
++    if (!SDL_HasClipboardText()) {
++        return;
++    }
++
++    text = SDL_GetClipboardText();
++    own = text && sdl2_clipboard_written &&
++          !strcmp(text, sdl2_clipboard_written);
++    SDL_free(text);
++    if (own) {
++        return;
++    }
++
++    info = qemu_clipboard_info_new(&sdl2_clipboard_peer,
++                                   QEMU_CLIPBOARD_SELECTION_CLIPBOARD);
++    info->types[QEMU_CLIPBOARD_TYPE_TEXT].available = true;
++    qemu_clipboard_update(info);
++    qemu_clipboard_info_unref(info);
++}
++
++void sdl2_clipboard_init(void)
++{
++    qemu_clipboard_peer_register(&sdl2_clipboard_peer);
++}
+diff --git a/ui/sdl2.c b/ui/sdl2.c
+index 6c1e760d..e7360ebf 100644
+--- a/ui/sdl2.c
++++ b/ui/sdl2.c
+@@ -1292,6 +1292,9 @@ void sdl2_poll_events(struct sdl2_console *scon)
+         case SDL_WINDOWEVENT:
+             handle_windowevent(ev);
+             break;
++        case SDL_CLIPBOARDUPDATE:
++            sdl2_clipboard_update();
++            break;
+         default:
+ #ifdef _WIN32
+             if (ev->type == sdl2_close_confirmed_event) {
+@@ -1604,6 +1607,7 @@ static void sdl2_display_init(DisplayState *ds, DisplayOptions *o)
+ 
+     mouse_mode_notifier.notify = sdl_mouse_mode_change;
+     qemu_add_mouse_mode_change_notifier(&mouse_mode_notifier);
++    sdl2_clipboard_init();
+ 
+     sdl_cursor_hidden = SDL_CreateCursor(&data, &data, 8, 1, 0, 0);
+     sdl_cursor_normal = SDL_GetCursor();

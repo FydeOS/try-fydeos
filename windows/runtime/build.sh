@@ -50,6 +50,7 @@ fetch() {
 	mkdir -p "$cache"
 	fetch_tarball .recipe
 	fetch_tarball .libslirp
+	fetch_tarball .spiceProtocol
 	fetch_tarball .sdl2
 	fetch_tarball .libepoxy
 	for i in $(j '.libepoxy.patches | keys[]'); do fetch_tarball ".libepoxy.patches[$i]"; done
@@ -85,6 +86,7 @@ mkdir -p "$work"
 	describe qemu
 	describe virglrenderer
 	echo "libslirp $(j .libslirp.url) $(j .libslirp.sha256)"
+	echo "spice-protocol $(j .spiceProtocol.url) $(j .spiceProtocol.sha256)"
 	echo "sdl2 $(j .sdl2.url) $(j .sdl2.sha256)"
 	echo "libepoxy $(j .libepoxy.url) $(j .libepoxy.sha256) + $(j .libepoxy.patchesFrom)"
 	echo "recipe $(j .recipe.url) $(j .recipe.sha256)"

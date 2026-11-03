@@ -2,7 +2,8 @@
 # Runs inside the build container without network (see build.sh): /repo is the
 # try-fydeos tree (read-only), /cache the verified downloads (read-only), /work
 # the scratch tree. Builds SDL2, libepoxy, libslirp, virglrenderer and QEMU with the
-# mingw64 cross toolchain and assembles /work/runtime.
+# mingw64 cross toolchain, installs the spice-protocol headers and assembles
+# /work/runtime.
 set -euo pipefail
 trap 'echo "container-build.sh: failed at line $LINENO" >&2' ERR
 
@@ -18,17 +19,18 @@ j() { jq -r "$1" "$lock"; }
 export SOURCE_DATE_EPOCH=$(j .sourceDateEpoch) TZ=UTC LC_ALL=C.UTF-8
 # Fedora's mingw pkg-config prefixes the sysroot to every path outside it;
 # its own .pc files carry absolute sysroot paths already.
-export PKG_CONFIG_PATH=$deps/lib/pkgconfig PKG_CONFIG_SYSROOT_DIR=
+export PKG_CONFIG_PATH=$deps/lib/pkgconfig:$deps/share/pkgconfig PKG_CONFIG_SYSROOT_DIR=
 
 rm -rf "$src" /work/build "$deps" "$stage" "$runtime" "$logs"
 mkdir -p "$src" "$deps" "$stage" "$runtime" "$logs"
 
 unpack() {
 	mkdir -p "$src/$2"
-	tar -xzf "/cache/$(j "$1 | .file // (.url | split(\"/\") | last)")" -C "$src/$2" --strip-components=1
+	tar -xf "/cache/$(j "$1 | .file // (.url | split(\"/\") | last)")" -C "$src/$2" --strip-components=1
 }
 unpack .recipe recipe
 unpack .libslirp libslirp
+unpack .spiceProtocol spice-protocol
 unpack .sdl2 sdl2
 unpack .libepoxy libepoxy
 for name in qemu virglrenderer; do
@@ -82,6 +84,11 @@ meson setup /work/build/virglrenderer "$src/virglrenderer" --cross-file "$MESON_
 	>"$logs/virglrenderer-configure.log"
 ninja -C /work/build/virglrenderer -j"$jobs" install >"$logs/virglrenderer-build.log"
 
+echo "== spice-protocol"
+meson setup /work/build/spice-protocol "$src/spice-protocol" --prefix="$deps" \
+	>"$logs/spice-protocol-configure.log"
+meson install -C /work/build/spice-protocol >"$logs/spice-protocol-install.log"
+
 echo "== QEMU"
 # bindir and datadir make QEMU's relocation look for firmware in <exe dir>\share.
 mkdir -p /work/build/qemu
@@ -90,8 +97,8 @@ mkdir -p /work/build/qemu
 	"$src/qemu/configure" --cross-prefix=x86_64-w64-mingw32- --disable-download \
 		--prefix=/try-fydeos --bindir=bin --datadir=bin/share --with-suffix= \
 		--target-list=x86_64-softmmu --enable-whpx --enable-sdl --enable-opengl \
-		--enable-virglrenderer --enable-slirp --disable-gtk --disable-libusb \
-		--disable-sdl-image --disable-docs --disable-plugins --disable-rust
+		--enable-virglrenderer --enable-slirp --enable-spice-protocol --disable-gtk \
+		--disable-libusb --disable-sdl-image --disable-docs --disable-plugins --disable-rust
 ) >"$logs/qemu-configure.log"
 ninja -C /work/build/qemu -j"$jobs" >"$logs/qemu-build.log"
 DESTDIR="$stage" ninja -C /work/build/qemu install >"$logs/qemu-install.log"
@@ -133,10 +140,11 @@ sort -o "$runtime/provenance/dll-sources.txt" "$runtime/provenance/dll-sources.t
 )
 
 licenses=$runtime/LICENSES
-mkdir -p "$licenses/qemu" "$licenses/virglrenderer" "$licenses/libslirp" "$licenses/SDL2" "$licenses/libepoxy" "$licenses/fedora"
+mkdir -p "$licenses/qemu" "$licenses/virglrenderer" "$licenses/libslirp" "$licenses/spice-protocol" "$licenses/SDL2" "$licenses/libepoxy" "$licenses/fedora"
 cp "$src/qemu/COPYING" "$src/qemu/COPYING.LIB" "$src/qemu/LICENSE" "$licenses/qemu/"
 cp "$src/virglrenderer/COPYING" "$licenses/virglrenderer/"
 cp "$src/libslirp/COPYRIGHT" "$licenses/libslirp/"
+cp "$src/spice-protocol/COPYING" "$licenses/spice-protocol/"
 cp "$src/sdl2/LICENSE.txt" "$licenses/SDL2/"
 cp "$src/libepoxy/COPYING" "$licenses/libepoxy/"
 : >"$runtime/provenance/fedora-packages.txt"

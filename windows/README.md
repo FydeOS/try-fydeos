@@ -235,8 +235,8 @@ take either.
 ```
 runtime/lock.json           every input by hash: Docker base image digest, the Try Omarchy recipe
                             tarball (its 24 QEMU and 5 virglrenderer patches), the QEMU and
-                            virglrenderer fork commits, libslirp, SDL2, libepoxy + MSYS2's patches,
-                            the Fedora packages whose DLLs ship, our overlay
+                            virglrenderer fork commits, libslirp, spice-protocol, SDL2, libepoxy +
+                            MSYS2's patches, the Fedora packages whose DLLs ship, our overlay
 runtime/Dockerfile          Fedora 43 + mingw64 toolchain and libraries
 runtime/build.sh            host side: fetch + verify, docker build, build without network, zip
 runtime/container-build.sh  inside the container: patch, build, collect DLLs/firmware/licenses
@@ -259,15 +259,16 @@ the top level and ours under `own`; `make win-dist` packs whatever is in
 `README.txt` ("Try FydeOS runtime for Windows, lock.json sha256 …" or
 "WINQ-EMU runtime for Try Omarchy").
 
-Sizes (lock 4aa76191872f): zip 41 MB (42,287,837 bytes), 116 MB unpacked
+Sizes (lock 773a7bbe5b5a): zip 41 MB (42,338,931 bytes), 116 MB unpacked
 (QEMU 82 MB unstripped, as in Try Omarchy's zip), runtime.zip in the
 packaged exe 43.5 MB.
 
 Stack: QEMU 11.0.0 (cmspam/winq-emu-qemu `2ce303cf` + Try Omarchy's 0001-0024),
 virglrenderer 1.3.0 (cmspam/winq-emu-virglrenderer `e80354b8` + 0001-0005),
 SDL2 2.32.10, libepoxy 1.5.10 with MSYS2's four patches, libslirp 4.9.3, all
-built from source; glib 2.86.5, pixman, zstd, libfdt, libffi, pcre2, gettext,
-win-iconv, zlib and the gcc runtime from Fedora 43 (+ updates).
+built from source, and the spice-protocol 0.14.5 headers for `qemu-vdagent`;
+glib 2.86.5, pixman, zstd, libfdt, libffi, pcre2, gettext, win-iconv, zlib
+and the gcc runtime from Fedora 43 (+ updates).
 
 Overlay (`windows/runtime/overlay/`, applied after the Try Omarchy patches):
 
@@ -303,6 +304,11 @@ Overlay (`windows/runtime/overlay/`, applied after the Try Omarchy patches):
   front of SDL's does this: SDL2 has no WM_SIZING handling, fills
   WM_GETMINMAXINFO itself, and its message hook only sees queued messages.
   Full screen and programmatic resizes are not constrained.
+- `qemu-sdl-clipboard.patch`: SDL2 has no clipboard peer, so `qemu-vdagent`
+  had no host side. `ui/sdl2-clipboard.c` shares the CLIPBOARD selection
+  as plain text both ways: a host copy is announced to the guest and read
+  when the guest pastes, a guest copy is fetched at once and written to
+  the host clipboard.
 - `virglrenderer-without-venus.patch`: the fork only links with Venus;
   Fedora's Vulkan headers are too old for it, so Venus is off.
 
