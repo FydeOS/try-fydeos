@@ -19,7 +19,7 @@ import (
 )
 
 // Keep in step with versioninfo.rc.
-const appVersion = "0.2.0"
+const appVersion = "0.3.0"
 
 const (
 	className   = "TryFydeOSStartMenu"

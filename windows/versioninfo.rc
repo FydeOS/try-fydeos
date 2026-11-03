@@ -8,8 +8,8 @@
 1 24 "TryFydeOS.manifest"
 
 1 VERSIONINFO
-FILEVERSION 0, 2, 0, 0
-PRODUCTVERSION 0, 2, 0, 0
+FILEVERSION 0, 3, 0, 0
+PRODUCTVERSION 0, 3, 0, 0
 FILEFLAGSMASK 0x3fL
 FILEFLAGS 0x0L
 FILEOS 0x40004L
@@ -22,11 +22,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "FydeOS"
             VALUE "FileDescription", "Try FydeOS"
-            VALUE "FileVersion", "0.2.0"
+            VALUE "FileVersion", "0.3.0"
             VALUE "InternalName", "TryFydeOS"
             VALUE "OriginalFilename", "Try FydeOS.exe"
             VALUE "ProductName", "Try FydeOS"
-            VALUE "ProductVersion", "0.2.0"
+            VALUE "ProductVersion", "0.3.0"
         END
     END
     BLOCK "VarFileInfo"
