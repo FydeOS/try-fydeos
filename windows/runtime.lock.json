@@ -11,7 +11,7 @@
   "own": {
     "name": "win-runtime-773a7bbe5b5a.zip",
     "url": "https://github.com/FydeOS/try-fydeos/releases/download/win-runtime-773a7bbe5b5a/win-runtime-773a7bbe5b5a.zip",
-    "sha256": "1b3f052e48a219a1fdd7bdf5688d847e13ec6484f619f5b1e576f1c2e5d4964d",
+    "sha256": "a42afbc93fa0a5dfb39581ea3652e1942e0e995310f5723264bc8e02bde34bb7",
     "keep": [
       "bin",
       "LICENSES",
