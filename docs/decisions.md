@@ -236,3 +236,36 @@ type, so images would need QEMU changes. Rejected: Try Omarchy's own
 bridges (JSON over a private virtio port on macOS, two slirp TCP ports on
 Windows, each with a custom guest daemon), because they would add guest
 code to the FydeOS image for no gain over the agent it already ships.
+
+## D16. GitHub Actions build the runtimes and the installers (2026-11-04)
+
+Development moved to github.com/FydeOS/try-fydeos: issues, pull requests
+and releases. Three workflows under `.github/workflows/`:
+
+- `checks` runs the unit tests (`make test`, `make win-test`,
+  `make win-build`, `make app-test`) on every pull request and push to
+  main; the three jobs are required before merge.
+- `runtime` builds a QEMU runtime whenever its lock changes (or on
+  dispatch) and publishes it as a pre-release named by the first twelve
+  hex digits of the lock's SHA-256: `win-runtime-<hash>` carries the zip
+  the Docker cross-build produces, `mac-runtime-<hash>` a tarball of the
+  runtime tree and its `provenance.json`. A published hash is never
+  rebuilt. The Windows build is reproducible, so the job also checks the
+  zip against the pin in `windows/runtime.lock.json`; bump both locks in
+  the same pull request. The Mac job passes `--no-smoke`: GitHub's macOS
+  runners have no hypervisor, so the HVF boot check is left to a real
+  Mac before each release.
+- `installers` builds the four installers (io and com for each platform)
+  on every pull request, push to main and `v*` tag, fetching the runtime
+  its lock names from the pre-release. The Mac job installs the tarball
+  with `runtime.py install`, which refuses a runtime built from another
+  lock and re-hashes every file against the provenance. On a tag, after
+  checking that `windows/versioninfo.rc` and `Info.plist` carry the tag's
+  version, it creates the GitHub Release with the installers and their
+  `.sha256` files.
+
+Rejected: building the runtimes by hand and uploading them, because the
+only reason to was the HVF smoke test, which belongs to release testing
+anyway; and building the runtime inside the installer workflow, which
+would cost half an hour per pull request for an input that changes a few
+times a year. Installers stay unsigned for now.

@@ -82,6 +82,16 @@ make win-sync       # copy the build to the test machine
 make win-dist       # dist/Try FydeOS-<version>.exe with the runtime and spec appended
 ```
 
+## Continuous integration
+
+GitHub Actions (`.github/workflows/`) run the unit tests on every pull
+request, build the QEMU runtimes when a lock changes and publish them as
+`win-runtime-<hash>` / `mac-runtime-<hash>` pre-releases, and build the
+four installers on every push; a `v<version>` tag turns them into a
+GitHub Release. The release workflow checks the tag against
+`windows/versioninfo.rc` and `macos/Resources/Info.plist`. See decision
+D16 in `docs/decisions.md`.
+
 ## Image and VM data
 
 At first launch the app asks FydeOS's release API for the board's latest
