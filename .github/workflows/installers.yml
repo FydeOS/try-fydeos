@@ -93,5 +93,9 @@ jobs:
           mkdir release
           cp "dist/Try FydeOS-$tag.exe" "release/TryFydeOS-$tag.exe"
           cp "dist/Try FydeOS-$tag.dmg" "release/TryFydeOS-$tag.dmg"
-          cd release && for f in *.exe *.dmg; do sha256sum "$f" > "$f.sha256"; done && cat *.sha256
-      - run: gh release create "$GITHUB_REF_NAME" --title "Try FydeOS ${GITHUB_REF_NAME#v}" --generate-notes release/*
+          sha256sum release/*
+      - name: release, with docs/releases/<tag>.md as the notes when it exists
+        run: |
+          notes=docs/releases/$GITHUB_REF_NAME.md
+          if [ -f "$notes" ]; then set -- --notes-file "$notes"; else set -- --generate-notes; fi
+          gh release create "$GITHUB_REF_NAME" --title "Try FydeOS ${GITHUB_REF_NAME#v}" "$@" release/*
