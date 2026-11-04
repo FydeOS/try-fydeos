@@ -177,7 +177,7 @@ for name in qemu virglrenderer; do
 	jq -r ".$name.patches[].file" "$lock" | while read -r f; do cp "$src/recipe/$f" "$runtime/provenance/patches/$name/"; done
 	jq -r ".$name.overlay[].file" "$lock" | while read -r f; do cp "/repo/windows/runtime/$f" "$runtime/provenance/patches/$name/"; done
 done
-rpm -qa | sort >"$runtime/provenance/build-packages.txt"
+rpm -qa | sort >/work/build-packages.txt
 cp /work/sources.txt "$runtime/provenance/sources.txt"
 sed -n '/^  Targets and accelerators/,$p' "$logs/qemu-configure.log" >"$runtime/provenance/qemu-configure-summary.txt"
 cat >"$runtime/README.txt" <<EOF

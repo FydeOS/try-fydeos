@@ -1,0 +1,91 @@
+name: installers
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: installers-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  windows:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: windows/go.mod
+          cache-dependency-path: windows/go.sum
+      - run: make win-runtime
+      - run: make win-dist EDITION=io
+      - run: make win-dist EDITION=com
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*.exe
+
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: brew install librsvg
+      - name: runtime
+        run: |
+          hash=$(shasum -a 256 runtime/lock.json | cut -c1-12)
+          gh release download "mac-runtime-$hash" --pattern "mac-runtime-$hash.tar.gz*" --dir out || {
+            echo "no mac-runtime-$hash release: run the runtime workflow for this lock first" >&2
+            exit 1
+          }
+          (cd out && shasum -a 256 -c "mac-runtime-$hash.tar.gz.sha256")
+          python3 runtime/runtime.py install "out/mac-runtime-$hash.tar.gz"
+      - uses: actions/cache@v4
+        with:
+          path: .cache/runtime/archives
+          key: firmware-${{ hashFiles('runtime/lock.json') }}
+      - run: python3 runtime/runtime.py firmware
+      - run: make app EDITION=io && make dmg EDITION=io
+      - run: make app EDITION=com && make dmg EDITION=com
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*.dmg
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [windows, macos]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: the tag matches both version strings
+        run: |
+          tag=${GITHUB_REF_NAME#v}
+          win=$(sed -n 's/.*"ProductVersion", "\(.*\)".*/\1/p' windows/versioninfo.rc)
+          mac=$(sed -n '/CFBundleShortVersionString/{n;s/.*<string>\(.*\)<\/string>.*/\1/p;}' macos/Resources/Info.plist)
+          [ "$win" = "$tag" ] && [ "$mac" = "$tag" ] || {
+            echo "tag $GITHUB_REF_NAME, windows/versioninfo.rc $win, macos/Resources/Info.plist $mac" >&2
+            exit 1
+          }
+          for f in "Try FydeOS-$tag.exe" "Try FydeOS-$tag-com.exe" "Try FydeOS-$tag.dmg" "Try FydeOS-$tag-com.dmg"; do
+            [ -f "dist/$f" ] || { echo "missing dist/$f" >&2; exit 1; }
+          done
+      - run: cd dist && for f in *.exe *.dmg; do sha256sum "$f" > "$f.sha256"; done && cat *.sha256
+      - run: gh release create "$GITHUB_REF_NAME" --title "Try FydeOS ${GITHUB_REF_NAME#v}" --generate-notes dist/*.exe dist/*.dmg dist/*.sha256

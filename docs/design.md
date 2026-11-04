@@ -57,7 +57,7 @@ fresh (D1).
 | Accelerator | Hypervisor.framework (`-accel hvf`) | Windows Hypervisor Platform (`accel=whpx`) |
 | Machine | `virt`, GICv3, ACPI | `q35` |
 | Display | Cocoa, `gl=on`, our window-master patch | SDL, `gl=on`, blob resources |
-| Runtime | built on the Mac from Try Omarchy's recipe with our overlay | cross-built in Docker on the workstation from Try Omarchy's recipe with our overlay (D13) |
+| Runtime | Try Omarchy's recipe with our overlay, built on a macOS runner (D16) | Try Omarchy's recipe with our overlay, cross-built in Docker (D13, D16) |
 | Launcher | Swift/AppKit | Go, Win32 via syscall, no cgo |
 | Guest reboot | QEMU resets in place | QEMU exits, launcher relaunches (WHPX cannot reset vCPUs) |
 | Idle suspend | fixed guest-side (arm64 BSP pref) | fatal, parked (see `windows/design.md` TODO) |
