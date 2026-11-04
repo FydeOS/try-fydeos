@@ -39,6 +39,8 @@ jobs:
           if gh release view "win-runtime-$hash" --json tagName >/dev/null 2>&1; then
             echo "win-runtime-$hash is already published"
             echo "published=true" >> "$GITHUB_OUTPUT"
+            mkdir -p out
+            gh release download "win-runtime-$hash" --pattern "win-runtime-$hash.zip.sha256" --dir out
           fi
       - if: steps.lock.outputs.published != 'true'
         run: JOBS=$(nproc) make win-runtime-build
@@ -46,23 +48,30 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: win-runtime
-          path: out/win-runtime-*.zip*
-      - name: the build matches windows/runtime.lock.json
-        if: steps.lock.outputs.published != 'true'
-        run: |
-          zip=out/win-runtime-${{ steps.lock.outputs.hash }}.zip
-          pin() { python3 -c 'import json, sys; print(json.load(open("windows/runtime.lock.json"))["own"][sys.argv[1]])' "$1"; }
-          [ "$(pin name)" = "$(basename "$zip")" ] || {
-            echo "windows/runtime.lock.json pins $(pin name) but this lock builds $(basename "$zip"): pin the new zip" >&2
-            exit 1
-          }
-          echo "$(pin sha256)  $zip" | sha256sum -c
+          path: |
+            out/win-runtime-${{ steps.lock.outputs.hash }}.zip
+            out/win-runtime-${{ steps.lock.outputs.hash }}.zip.sha256
+            out/win-runtime-${{ steps.lock.outputs.hash }}.packages.txt
       - if: steps.lock.outputs.published != 'true'
         run: |
           hash=${{ steps.lock.outputs.hash }}
           gh release create "win-runtime-$hash" --prerelease --title "Windows runtime $hash" \
             --notes "QEMU runtime for the Windows app, built from windows/runtime/lock.json at ${{ github.sha }}." \
-            "out/win-runtime-$hash.zip" "out/win-runtime-$hash.zip.sha256"
+            "out/win-runtime-$hash.zip" "out/win-runtime-$hash.zip.sha256" "out/win-runtime-$hash.packages.txt"
+      - name: windows/runtime.lock.json pins the published zip
+        run: |
+          hash=${{ steps.lock.outputs.hash }}
+          zip=win-runtime-$hash.zip
+          published=$(cut -c1-64 "out/$zip.sha256")
+          pin() { python3 -c 'import json, sys; print(json.load(open("windows/runtime.lock.json"))["own"][sys.argv[1]])' "$1"; }
+          [ "$(pin name)" = "$zip" ] || {
+            echo "windows/runtime.lock.json pins $(pin name); this lock publishes $zip with sha256 $published: pin it" >&2
+            exit 1
+          }
+          [ "$(pin sha256)" = "$published" ] || {
+            echo "windows/runtime.lock.json pins sha256 $(pin sha256) but the published $zip is $published: update the pin" >&2
+            exit 1
+          }
 
   macos:
     runs-on: macos-15
