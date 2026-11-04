@@ -1,5 +1,6 @@
 import hashlib
 import importlib.util
+import io
 import json
 import tempfile
 import unittest
@@ -188,6 +189,112 @@ class ProvenanceTest(unittest.TestCase):
             self.assertEqual(json.loads(out.read_text()), {"runtime_files": hashes, "b": 1})
             self.assertTrue(out.read_text().endswith("\n"))
             self.assertFalse(out.with_name("provenance.json.tmp").exists())
+
+
+class PackInstallTest(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.tmp = Path(tmp.name)
+        saved = runtime.OUT, runtime.LOCK
+        self.addCleanup(lambda: (setattr(runtime, "OUT", saved[0]), setattr(runtime, "LOCK", saved[1])))
+        runtime.LOCK = self.tmp / "lock.json"
+        runtime.LOCK.write_text('{"schema": 1}\n')
+        self.lock_sha = runtime.sha256_file(runtime.LOCK)
+        runtime.OUT = self.tmp / "build/runtime"
+        self.build = runtime.OUT / "20260101T000000Z"
+        tree = self.build / "runtime"
+        (tree / "bin").mkdir(parents=True)
+        (tree / "lib").mkdir()
+        (tree / "bin/qemu-system-aarch64").write_bytes(b"qemu")
+        (tree / "bin/qemu-system-aarch64").chmod(0o755)
+        (tree / "lib/libx.dylib").write_bytes(b"lib")
+        (tree / "README").write_bytes(b"readme")
+        self.files = runtime.file_hashes(tree)
+        self.write_provenance(self.lock_sha)
+        (runtime.OUT / "current").symlink_to(self.build.name)
+        self.tarball = self.tmp / "pack/mac-runtime.tar.gz"
+
+    def write_provenance(self, lock_sha, files=None):
+        runtime.write_json(self.build / "provenance.json", {
+            "build_id": self.build.name, "lock": {"sha256": lock_sha},
+            "runtime_files": files or self.files})
+
+    def install_out(self):
+        runtime.OUT = self.tmp / "installed/runtime"
+        return runtime.OUT
+
+    def test_round_trip(self):
+        self.assertEqual(runtime.pack_runtime(self.tarball), self.tarball)
+        self.assertEqual((self.tmp / "pack/mac-runtime.tar.gz.sha256").read_text(),
+                         f"{runtime.sha256_file(self.tarball)}  mac-runtime.tar.gz\n")
+        with runtime.tarfile.open(self.tarball) as archive:
+            names = archive.getnames()
+        self.assertEqual(names, ["provenance.json", "runtime", "runtime/README", "runtime/bin",
+                                 "runtime/bin/qemu-system-aarch64", "runtime/lib",
+                                 "runtime/lib/libx.dylib"])
+        out = self.install_out()
+        link, build_id = runtime.install_runtime(self.tarball)
+        self.assertEqual((link, build_id), (out / "current", self.build.name))
+        self.assertEqual(runtime.os.readlink(out / "current"), self.build.name)
+        installed = out / "current"
+        self.assertEqual(runtime.file_hashes(installed / "runtime"), self.files)
+        self.assertEqual((installed / "runtime/bin/qemu-system-aarch64").stat().st_mode & 0o777, 0o755)
+        self.assertEqual(json.loads((installed / "provenance.json").read_text())["build_id"],
+                         self.build.name)
+        self.assertEqual(sorted(p.name for p in out.iterdir()), ["20260101T000000Z", "current"])
+        runtime.install_runtime(self.tarball)
+        self.assertEqual(runtime.file_hashes(installed / "runtime"), self.files)
+
+    def test_pack_refuses_other_lock(self):
+        self.write_provenance(SHA_A)
+        with self.assertRaisesRegex(runtime.Error, "different lock"):
+            runtime.pack_runtime(self.tarball)
+        self.assertFalse(self.tarball.exists())
+
+    def test_install_refuses_other_lock(self):
+        runtime.pack_runtime(self.tarball)
+        runtime.LOCK.write_text('{"schema": 2}\n')
+        out = self.install_out()
+        with self.assertRaisesRegex(runtime.Error, "different lock"):
+            runtime.install_runtime(self.tarball)
+        self.assertFalse((out / "current").exists())
+
+    def test_install_refuses_mismatched_files(self):
+        self.write_provenance(self.lock_sha, {**self.files, "README": SHA_A})
+        runtime.pack_runtime(self.tarball)
+        out = self.install_out()
+        with self.assertRaisesRegex(runtime.Error, "do not match"):
+            runtime.install_runtime(self.tarball)
+        self.assertEqual(list(out.iterdir()), [])
+
+    def test_install_refuses_members_outside_runtime(self):
+        for name in ("../evil", "/abs", "runtime/../../evil", "other/x"):
+            with self.subTest(name=name):
+                bad = self.tmp / "bad.tar.gz"
+                with runtime.tarfile.open(bad, "w:gz") as archive:
+                    archive.add(self.build / "provenance.json", "provenance.json")
+                    member = runtime.tarfile.TarInfo(name)
+                    member.size = 4
+                    archive.addfile(member, io.BytesIO(b"evil"))
+                with runtime.tarfile.open(bad) as archive:
+                    self.assertEqual(archive.getnames()[1], name)
+                out = self.install_out()
+                with self.assertRaisesRegex(runtime.Error, "unexpected tarball member"):
+                    runtime.install_runtime(bad)
+                self.assertFalse(out.exists())
+                self.assertFalse((self.tmp / "evil").exists())
+
+    def test_install_refuses_symlink_member(self):
+        bad = self.tmp / "bad.tar.gz"
+        with runtime.tarfile.open(bad, "w:gz") as archive:
+            archive.add(self.build / "provenance.json", "provenance.json")
+            link = runtime.tarfile.TarInfo("runtime/bin/link")
+            link.type, link.linkname = runtime.tarfile.SYMTYPE, "/etc/passwd"
+            archive.addfile(link)
+        self.install_out()
+        with self.assertRaisesRegex(runtime.Error, "unexpected tarball member"):
+            runtime.install_runtime(bad)
 
 
 if __name__ == "__main__":

@@ -514,9 +514,9 @@ def cmd_build(args):
             raise Error("re-signed QEMU lacks the hypervisor entitlement")
 
     probes = probe(qemu)
-    smoke = hvf_smoke(qemu)
+    smoke = {"skipped": True} if args.no_smoke else hvf_smoke(qemu)
     print(json.dumps({"probe": probes, "hvf_smoke": smoke}, indent=2), flush=True)
-    if not probes["ok"] or not smoke["ok"]:
+    if not probes["ok"] or not smoke.get("ok", True):
         raise Error(f"runtime checks failed; see {result}")
     write_json(result / "provenance.json", {
         "schema": 1,
@@ -533,12 +533,85 @@ def cmd_build(args):
         "probe": probes,
         "hvf_smoke": smoke,
     })
+    print(f"runtime ready: {point_current(build_id)} -> {build_id}")
+
+
+def point_current(build_id):
     link = OUT / "current"
     tmp = OUT / ".current.tmp"
     if tmp.is_symlink():
         tmp.unlink()
     tmp.symlink_to(build_id)
     os.replace(tmp, link)
+    return link
+
+
+def default_pack_output():
+    return ROOT / f"out/mac-runtime-{sha256_file(LOCK)[:12]}.tar.gz"
+
+
+def pack_runtime(output):
+    current = (OUT / "current").resolve()
+    provenance = json.loads((current / "provenance.json").read_text())
+    if provenance["lock"]["sha256"] != sha256_file(LOCK):
+        raise Error(f"runtime {current.name} was built from a different lock; rebuild it")
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    tmp = output.with_name(output.name + ".part")
+    with tarfile.open(tmp, "w:gz") as archive:
+        archive.add(current / "provenance.json", "provenance.json")
+        archive.add(current / "runtime", "runtime", recursive=False)
+        for path in sorted((current / "runtime").rglob("*")):
+            archive.add(path, str(path.relative_to(current)), recursive=False)
+    os.replace(tmp, output)
+    output.with_name(output.name + ".sha256").write_text(f"{sha256_file(output)}  {output.name}\n")
+    return output
+
+
+def cmd_pack(args):
+    print(pack_runtime(args.output or default_pack_output()))
+
+
+def check_member(member):
+    name = member.name
+    parts = Path(name).parts
+    if (name.startswith("/") or ".." in parts
+            or not (name == "provenance.json" or parts[0] == "runtime")
+            or not (member.isfile() or member.isdir())):
+        raise Error(f"unexpected tarball member: {name}")
+
+
+def install_runtime(tarball):
+    with tarfile.open(tarball, "r:gz") as archive:
+        members = archive.getmembers()
+        for member in members:
+            check_member(member)
+        provenance = json.load(archive.extractfile("provenance.json"))
+        if provenance["lock"]["sha256"] != sha256_file(LOCK):
+            raise Error(f"{tarball} was built from a different lock; rebuild and republish it")
+        build_id = provenance["build_id"]
+        if not re.match(r"^[A-Za-z0-9][A-Za-z0-9._-]*$", build_id):
+            raise Error(f"bad build_id in {tarball}: {build_id}")
+        OUT.mkdir(parents=True, exist_ok=True)
+        staging = OUT / f".{build_id}.installing"
+        shutil.rmtree(staging, ignore_errors=True)
+        staging.mkdir()
+        try:
+            archive.extractall(staging, members, filter="tar")
+            if file_hashes(staging / "runtime") != provenance["runtime_files"]:
+                raise Error(f"{tarball} runtime files do not match its provenance")
+        except BaseException:
+            shutil.rmtree(staging)
+            raise
+    target = OUT / build_id
+    if target.exists():
+        shutil.rmtree(target)
+    os.replace(staging, target)
+    return point_current(build_id), build_id
+
+
+def cmd_install(args):
+    link, build_id = install_runtime(args.tarball)
     print(f"runtime ready: {link} -> {build_id}")
 
 
@@ -553,7 +626,7 @@ def read_sums(path):
 def cmd_firmware(args):
     lock = load_lock()
     entry = next(a for a in lock["archives"] if a["name"].startswith(QEMU_ARCHIVE_PREFIX))
-    place_archive(entry, ARCHIVES, offline=True)
+    place_archive(entry, ARCHIVES, offline=False)
     root = entry["name"].removesuffix(".tar.gz")
     sums = read_sums(FIRMWARE / "SHA256SUMS")
     with tarfile.open(ARCHIVES / entry["name"], "r:gz") as archive:
@@ -637,7 +710,14 @@ def main():
     p = sub.add_parser("build", help="build, sign and probe the runtime")
     p.add_argument("--jobs", type=int, default=8)
     p.add_argument("--offline", action="store_true")
+    p.add_argument("--no-smoke", action="store_true", help="skip the HVF smoke test")
     p.set_defaults(func=cmd_build)
+    p = sub.add_parser("pack", help="pack out/runtime/current into a release tarball")
+    p.add_argument("--output", help="default: out/mac-runtime-<lock sha256[:12]>.tar.gz")
+    p.set_defaults(func=cmd_pack)
+    p = sub.add_parser("install", help="install a packed runtime tarball as out/runtime/current")
+    p.add_argument("tarball")
+    p.set_defaults(func=cmd_install)
     sub.add_parser("doctor", help="check host, pins, cache and runtime").set_defaults(func=cmd_doctor)
     sub.add_parser("firmware", help="extract the pinned edk2 pair").set_defaults(func=cmd_firmware)
     args = parser.parse_args()
