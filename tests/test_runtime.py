@@ -176,6 +176,13 @@ class SeedTest(unittest.TestCase):
                 runtime.place_archive({"name": "y", "url": "", "sha256": SHA_A}, Path(tmp), None, True)
 
 
+class HttpTest(unittest.TestCase):
+    def test_requests_carry_a_user_agent_and_auth(self):
+        request = runtime.http_request("https://example.invalid/a", {"Authorization": "Bearer x"})
+        self.assertEqual(request.get_header("User-agent"), runtime.USER_AGENT)
+        self.assertEqual(request.unredirected_hdrs["Authorization"], "Bearer x")
+
+
 class ProvenanceTest(unittest.TestCase):
     def test_write_json_and_file_hashes(self):
         with tempfile.TemporaryDirectory() as tmp:

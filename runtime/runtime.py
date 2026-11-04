@@ -201,10 +201,18 @@ def cmd_lock(args):
           f"{len(lock['archives'])} archives, {lock['upstream']['commit']}")
 
 
-def http_get(url, dest, headers=None):
-    request = urllib.request.Request(url)
+USER_AGENT = "try-fydeos-runtime (+https://github.com/FydeOS/try-fydeos)"
+
+
+def http_request(url, headers=None):
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     for key, value in (headers or {}).items():
         request.add_unredirected_header(key, value)
+    return request
+
+
+def http_get(url, dest, headers=None):
+    request = http_request(url, headers)
     with urllib.request.urlopen(request, timeout=60) as response, open(dest, "wb") as out:
         shutil.copyfileobj(response, out)
 
