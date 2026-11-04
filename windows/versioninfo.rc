@@ -22,11 +22,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "FydeOS"
             VALUE "FileDescription", "Try FydeOS"
-            VALUE "FileVersion", "0.3.0"
+            VALUE "FileVersion", "0.4.0"
             VALUE "InternalName", "TryFydeOS"
             VALUE "OriginalFilename", "Try FydeOS.exe"
             VALUE "ProductName", "Try FydeOS"
-            VALUE "ProductVersion", "0.3.0"
+            VALUE "ProductVersion", "0.4.0"
         END
     END
     BLOCK "VarFileInfo"
