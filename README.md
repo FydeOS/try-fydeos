@@ -87,8 +87,10 @@ make win-dist       # dist/Try FydeOS-<version>.exe with the runtime and spec ap
 GitHub Actions (`.github/workflows/`) run the unit tests on every pull
 request, build the QEMU runtimes when a lock changes and publish them as
 `win-runtime-<hash>` / `mac-runtime-<hash>` pre-releases, and build the
-four installers on every push; a `v<version>` tag turns them into a
-GitHub Release. The release workflow checks the tag against
+four installers on every push; a `v<version>` tag publishes the io pair
+as a GitHub Release (`TryFydeOS-<version>.exe` and `.dmg`, notes from
+`docs/releases/<tag>.md`; the com pair stays a workflow artifact for
+now). The release job checks the tag against
 `windows/versioninfo.rc` and `macos/Resources/Info.plist`. See decision
 D16 in `docs/decisions.md`.
 
