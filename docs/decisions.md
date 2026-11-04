@@ -250,11 +250,15 @@ and releases. Three workflows under `.github/workflows/`:
   hex digits of the lock's SHA-256: `win-runtime-<hash>` carries the zip
   the Docker cross-build produces, `mac-runtime-<hash>` a tarball of the
   runtime tree and its `provenance.json`. A published hash is never
-  rebuilt. The Windows build is reproducible, so the job also checks the
-  zip against the pin in `windows/runtime.lock.json`; bump both locks in
-  the same pull request. The Mac job passes `--no-smoke`: GitHub's macOS
-  runners have no hypervisor, so the HVF boot check is left to a real
-  Mac before each release.
+  rebuilt. The Windows job then checks that `windows/runtime.lock.json`
+  pins the published zip, so a recipe lock bump is followed by a pin
+  update in the same pull request, taken from the job's failure message
+  or from a local build: the cross-build reproduces byte for byte across
+  machines (verified 2026-11-04 against the workstation's zip) now that
+  the build image's package list travels beside the zip as
+  `.packages.txt` instead of inside it. The Mac job passes `--no-smoke`:
+  GitHub's macOS runners have no hypervisor, so the HVF boot check is
+  left to a real Mac before each release.
 - `installers` builds the four installers (io and com for each platform)
   on every pull request, push to main and `v*` tag, fetching the runtime
   its lock names from the pre-release. The Mac job installs the tarball
