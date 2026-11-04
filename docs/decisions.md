@@ -265,8 +265,12 @@ and releases. Three workflows under `.github/workflows/`:
   with `runtime.py install`, which refuses a runtime built from another
   lock and re-hashes every file against the provenance. On a tag, after
   checking that `windows/versioninfo.rc` and `Info.plist` carry the tag's
-  version, it creates the GitHub Release with the installers and their
-  `.sha256` files.
+  version, it creates the GitHub Release with the io installers as
+  `TryFydeOS-<version>.exe` and `.dmg` plus `.sha256` files written
+  against those names: GitHub replaces spaces in asset names with dots,
+  which would leave the checksums naming files nobody has. The com
+  installers are built on every run and kept as workflow artifacts; they
+  are not released yet.
 
 Rejected: building the runtimes by hand and uploading them, because the
 only reason to was the HVF smoke test, which belongs to release testing
