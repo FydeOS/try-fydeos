@@ -41,6 +41,8 @@ SPICE_PROTOCOL = {
     "url": "https://www.spice-space.org/download/releases/spice-protocol-0.14.5.tar.xz",
     "sha256": "baf58449f6e89d19f475899ad5fb9196fdc46c03cc53233f4e39cf2978f9cff7",
 }
+VIRGL_TAP_COMMIT = "de31b78a88b2f9eea04dff32438e6283b400edf7"
+VIRGL_TAP_SHA256 = "373db13456610847b97a2d442f1b7cd2ffa0c9a60c6850dc2185d40b09dfa5e4"
 RECIPE_FILES = [
     BUILD_SCRIPT, PREPARE_SCRIPT, BOTTLES_SCRIPT,
     "macos/bundle-macho-dependencies.sh", "macos/verify-macos-compatibility.sh",
@@ -170,7 +172,7 @@ def make_lock(upstream, ref):
     def show(path):
         return git(upstream, "show", f"{commit}:{path}")
 
-    build, prepare = show(BUILD_SCRIPT), show(PREPARE_SCRIPT)
+    build, prepare = pin_virgl_tap(show(BUILD_SCRIPT)), show(PREPARE_SCRIPT)
     for script in (build, prepare):
         for ref_path in re.findall(r"\$native_dir/([A-Za-z0-9_./-]+)", script):
             if ref_path != ".build" and f"macos/{ref_path}" not in entries:
@@ -328,6 +330,18 @@ def substitute_once(text, anchor, replacement):
     return text.replace(anchor, replacement)
 
 
+def pin_virgl_tap(text):
+    """Upstream re-pushed the v1.0.42 tap tag, so the tap is pinned by commit."""
+    tap = "https://codeload.github.com/startergo/homebrew-virglrenderer/tar.gz"
+    text = substitute_once(text, "\nvirgl_tap_root=homebrew-virglrenderer-1.0.42\n",
+                           f"\nvirgl_tap_root=homebrew-virglrenderer-{VIRGL_TAP_COMMIT}\n")
+    text = substitute_once(text, f'\nvirgl_tap_url="{tap}/refs/tags/v1.0.42"\n',
+                           f'\nvirgl_tap_url="{tap}/{VIRGL_TAP_COMMIT}"\n')
+    return substitute_once(
+        text, "\nvirgl_tap_sha256=950273fbba46905b6112ee2bd0598c1da706c25319a7347058cbc52f04ba96dd\n",
+        f"\nvirgl_tap_sha256={VIRGL_TAP_SHA256}\n")
+
+
 def extra_overlay_patches(directory=OVERLAY_DIR):
     patches = sorted(p for p in Path(directory).glob("*.patch") if p.name != OVERLAY.name)
     for path in patches:
@@ -389,7 +403,7 @@ def apply_overlay(recipe, lock):
         data = path.read_bytes()
         (recipe / OVERLAY_STAGE / path.name).write_bytes(data)
         staged.append((path.name, sha256_bytes(data)))
-    after = insert_spice_protocol(insert_overlay_patches(after, staged))
+    after = pin_virgl_tap(insert_spice_protocol(insert_overlay_patches(after, staged)))
     script.write_text(after)
     patches = {str(OVERLAY.relative_to(ROOT)): overlay_sha}
     patches.update({str((OVERLAY_DIR / name).relative_to(ROOT)): sha for name, sha in staged})
@@ -397,6 +411,8 @@ def apply_overlay(recipe, lock):
                                "replaces_sha256": upstream_sha},
             "patches": patches,
             "applied_after_upstream": [f"{OVERLAY_STAGE}/{name}" for name, _ in staged],
+            "virgl_tap": {"commit": VIRGL_TAP_COMMIT, "sha256": VIRGL_TAP_SHA256,
+                          "replaces_tag": "v1.0.42"},
             "build_script": {"before_sha256": sha256_bytes(before.encode()),
                              "after_sha256": sha256_bytes(after.encode())}}
 

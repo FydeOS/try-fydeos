@@ -17,6 +17,15 @@ SPICE_ANCHORS = ('tar -xzf "$qemu_archive" -C "$source_parent"\n'
                  'pkg_config_libdir="$slirp_root/lib/pkgconfig:$libusb_root/lib/pkgconfig"\n'
                  "require_private_pkg_version libusb-1.0 1.0.30\n"
                  "    ../configure \\\n      --enable-libusb \\\n      --disable-debug-info \\\n")
+VIRGL_COMMIT = "de31b78a88b2f9eea04dff32438e6283b400edf7"
+VIRGL_SHA = "373db13456610847b97a2d442f1b7cd2ffa0c9a60c6850dc2185d40b09dfa5e4"
+VIRGL_URL = f"https://codeload.github.com/startergo/homebrew-virglrenderer/tar.gz/{VIRGL_COMMIT}"
+VIRGL_TAG_LINES = (
+    "virgl_tap_root=homebrew-virglrenderer-1.0.42\n"
+    'virgl_tap_archive_name="$virgl_tap_root.tar.gz"\n'
+    'virgl_tap_url="https://codeload.github.com/startergo/homebrew-virglrenderer/tar.gz'
+    '/refs/tags/v1.0.42"\n'
+    "virgl_tap_sha256=950273fbba46905b6112ee2bd0598c1da706c25319a7347058cbc52f04ba96dd\n")
 
 
 def sha(data):
@@ -56,6 +65,9 @@ class LockTest(unittest.TestCase):
         self.assertIn(runtime.IDENTITY_PATCH, paths)
         self.assertEqual(len(lock["archives"]), 27)
         self.assertIn(runtime.SPICE_PROTOCOL, lock["archives"])
+        self.assertIn({"name": f"homebrew-virglrenderer-{VIRGL_COMMIT}.tar.gz",
+                       "url": VIRGL_URL, "sha256": VIRGL_SHA}, lock["archives"])
+        self.assertFalse(any("1.0.42" in e["name"] for e in lock["archives"]))
 
     def test_verify_tree(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -125,12 +137,31 @@ class OverlayTest(unittest.TestCase):
                 with self.assertRaises(runtime.Error):
                     runtime.insert_spice_protocol(text)
 
+    def test_virgl_tap_pinned_by_commit(self):
+        sample = "set -eu\n" + VIRGL_TAG_LINES + "echo done\n"
+        lines = runtime.pin_virgl_tap(sample).splitlines()
+        self.assertEqual(lines, [
+            "set -eu", f"virgl_tap_root=homebrew-virglrenderer-{VIRGL_COMMIT}",
+            'virgl_tap_archive_name="$virgl_tap_root.tar.gz"',
+            f'virgl_tap_url="{VIRGL_URL}"', f"virgl_tap_sha256={VIRGL_SHA}", "echo done"])
+        self.assertEqual(runtime.script_archives(runtime.pin_virgl_tap(sample)), [
+            {"name": f"homebrew-virglrenderer-{VIRGL_COMMIT}.tar.gz", "url": VIRGL_URL,
+             "sha256": VIRGL_SHA}])
+
+    def test_virgl_tap_anchor_missing_or_repeated(self):
+        sample = "\n" + VIRGL_TAG_LINES
+        for anchor in [line for line in VIRGL_TAG_LINES.splitlines(keepends=True)
+                       if "archive_name" not in line]:
+            for text in (sample.replace(anchor, ""), sample + "\n" + anchor):
+                with self.assertRaises(runtime.Error):
+                    runtime.pin_virgl_tap(text)
+
     def test_staged_script_lists_overlay_patches(self):
         lock = runtime.load_lock()
         upstream_sha = next(e["sha256"] for e in lock["recipe"]
                             if e["path"] == runtime.IDENTITY_PATCH)
-        script = (f"identity_patch_sha256={upstream_sha}\n"
-                  f"{runtime.LAST_QEMU_PATCH}\n" + SPICE_ANCHORS)
+        script = (f"identity_patch_sha256={upstream_sha}\n" + VIRGL_TAG_LINES
+                  + f"{runtime.LAST_QEMU_PATCH}\n" + SPICE_ANCHORS)
         with tempfile.TemporaryDirectory() as tmp:
             recipe = Path(tmp)
             (recipe / runtime.BUILD_SCRIPT).parent.mkdir(parents=True)
@@ -142,6 +173,11 @@ class OverlayTest(unittest.TestCase):
             self.assertIn(runtime.OVERLAY_DIR / "qemu-cocoa-window-master.patch", extras)
             self.assertEqual(sorted(extras), extras)
             self.assertIn("      --enable-spice-protocol \\\n", staged)
+            self.assertIn(f'\nvirgl_tap_url="{VIRGL_URL}"\n', staged)
+            self.assertIn(f"\nvirgl_tap_sha256={VIRGL_SHA}\n", staged)
+            self.assertNotIn("1.0.42", staged)
+            self.assertEqual(result["virgl_tap"], {"commit": VIRGL_COMMIT, "sha256": VIRGL_SHA,
+                                                   "replaces_tag": "v1.0.42"})
             applied = [line.split()[-1].strip('"') for line in staged.splitlines()
                        if line.startswith("patch -d")]
             self.assertEqual(applied, ["$minimum_guest_size_patch"] + [
