@@ -42,6 +42,11 @@ jobs:
           fi
       - if: steps.lock.outputs.published != 'true'
         run: JOBS=$(nproc) make win-runtime-build
+      - if: steps.lock.outputs.published != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: win-runtime
+          path: out/win-runtime-*.zip*
       - name: the build matches windows/runtime.lock.json
         if: steps.lock.outputs.published != 'true'
         run: |
@@ -52,11 +57,6 @@ jobs:
             exit 1
           }
           echo "$(pin sha256)  $zip" | sha256sum -c
-      - if: steps.lock.outputs.published != 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: win-runtime
-          path: out/win-runtime-*.zip*
       - if: steps.lock.outputs.published != 'true'
         run: |
           hash=${{ steps.lock.outputs.hash }}
