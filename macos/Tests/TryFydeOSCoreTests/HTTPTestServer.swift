@@ -126,6 +126,9 @@ final class HTTPTestServer: @unchecked Sendable {
                 sent += n
             }
         }
+        // CFNetwork drops body bytes it has received but not yet delivered when the
+        // connection is lost, so let the client drain the cut body before the close.
+        if response.cutAfter != nil { Thread.sleep(forTimeInterval: 1) }
     }
 }
 
