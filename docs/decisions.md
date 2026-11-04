@@ -266,9 +266,10 @@ and releases. Three workflows under `.github/workflows/`:
   lock and re-hashes every file against the provenance. On a tag, after
   checking that `windows/versioninfo.rc` and `Info.plist` carry the tag's
   version, it creates the GitHub Release with the io installers as
-  `TryFydeOS-<version>.exe` and `.dmg` plus `.sha256` files written
-  against those names: GitHub replaces spaces in asset names with dots,
-  which would leave the checksums naming files nobody has. The com
+  `TryFydeOS-<version>.exe` and `.dmg` (GitHub replaces spaces in asset
+  names with dots) and the notes from `docs/releases/<tag>.md`, falling
+  back to GitHub's generated change list when that file is missing. No
+  checksum files: the job prints the hashes in its log. The com
   installers are built on every run and kept as workflow artifacts; they
   are not released yet.
 
