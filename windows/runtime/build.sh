@@ -2,7 +2,8 @@
 # Builds Try FydeOS's Windows QEMU runtime from windows/runtime/lock.json.
 #   build.sh fetch   download and verify sources, build the Docker image (network)
 #   build.sh         fetch, then build in the container without network and write
-#                    out/win-runtime/ and out/win-runtime-<lock sha256 prefix>.zip (+ .sha256)
+#                    out/win-runtime/ and out/win-runtime-<lock sha256 prefix>.zip
+#                    (+ .sha256, + .packages.txt listing the build image's packages)
 # Everything lives under out/: win-runtime-cache/ (downloads), win-runtime-build/.
 set -euo pipefail
 
@@ -102,6 +103,7 @@ rm -f "$zip"
 find "$work/runtime" -exec touch -h -d "@$(j .sourceDateEpoch)" {} +
 (cd "$work/runtime" && find . -type f | LC_ALL=C sort | sed 's|^\./||' | zip -q -X -9 "$zip" -@)
 (cd "$root/out" && sha256sum "$(basename "$zip")" >"$zip.sha256")
+cp "$work/build-packages.txt" "${zip%.zip}.packages.txt"
 rm -rf "$root/out/win-runtime"
 cp -a "$work/runtime" "$root/out/win-runtime"
 echo "built in $(($(date +%s) - start)) s: $(du -sh "$root/out/win-runtime" | cut -f1) unpacked, $(du -h "$zip" | cut -f1) zip"
