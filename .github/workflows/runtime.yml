@@ -1,0 +1,101 @@
+name: runtime
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - runtime/**
+      - windows/runtime/**
+      - windows/runtime.lock.json
+      - .github/workflows/runtime.yml
+  pull_request:
+    paths:
+      - runtime/**
+      - windows/runtime/**
+      - windows/runtime.lock.json
+      - .github/workflows/runtime.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: runtime-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  windows:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - id: lock
+        run: |
+          hash=$(sha256sum windows/runtime/lock.json | cut -c1-12)
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+          if gh release view "win-runtime-$hash" --json tagName >/dev/null 2>&1; then
+            echo "win-runtime-$hash is already published"
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.lock.outputs.published != 'true'
+        run: JOBS=$(nproc) make win-runtime-build
+      - name: the build matches windows/runtime.lock.json
+        if: steps.lock.outputs.published != 'true'
+        run: |
+          zip=out/win-runtime-${{ steps.lock.outputs.hash }}.zip
+          pin() { python3 -c 'import json, sys; print(json.load(open("windows/runtime.lock.json"))["own"][sys.argv[1]])' "$1"; }
+          [ "$(pin name)" = "$(basename "$zip")" ] || {
+            echo "windows/runtime.lock.json pins $(pin name) but this lock builds $(basename "$zip"): pin the new zip" >&2
+            exit 1
+          }
+          echo "$(pin sha256)  $zip" | sha256sum -c
+      - if: steps.lock.outputs.published != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: win-runtime
+          path: out/win-runtime-*.zip*
+      - if: steps.lock.outputs.published != 'true'
+        run: |
+          hash=${{ steps.lock.outputs.hash }}
+          gh release create "win-runtime-$hash" --prerelease --title "Windows runtime $hash" \
+            --notes "QEMU runtime for the Windows app, built from windows/runtime/lock.json at ${{ github.sha }}." \
+            "out/win-runtime-$hash.zip" "out/win-runtime-$hash.zip.sha256"
+
+  macos:
+    runs-on: macos-15
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - id: lock
+        run: |
+          hash=$(shasum -a 256 runtime/lock.json | cut -c1-12)
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+          if gh release view "mac-runtime-$hash" --json tagName >/dev/null 2>&1; then
+            echo "mac-runtime-$hash is already published"
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.lock.outputs.published != 'true'
+        run: |
+          brew install pkg-config
+          python3 runtime/runtime.py doctor || true
+      - if: steps.lock.outputs.published != 'true'
+        run: python3 runtime/runtime.py build --jobs "$(sysctl -n hw.ncpu)" --no-smoke
+      - if: steps.lock.outputs.published != 'true'
+        run: python3 runtime/runtime.py pack
+      - if: steps.lock.outputs.published != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-runtime
+          path: out/mac-runtime-*.tar.gz*
+      - if: steps.lock.outputs.published != 'true'
+        run: |
+          hash=${{ steps.lock.outputs.hash }}
+          gh release create "mac-runtime-$hash" --prerelease --title "macOS runtime $hash" \
+            --notes "QEMU runtime for the macOS app, built from runtime/lock.json at ${{ github.sha }}. The HVF smoke test is skipped on the runner." \
+            "out/mac-runtime-$hash.tar.gz" "out/mac-runtime-$hash.tar.gz.sha256"
