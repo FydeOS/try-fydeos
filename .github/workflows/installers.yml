@@ -87,5 +87,11 @@ jobs:
           for f in "Try FydeOS-$tag.exe" "Try FydeOS-$tag-com.exe" "Try FydeOS-$tag.dmg" "Try FydeOS-$tag-com.dmg"; do
             [ -f "dist/$f" ] || { echo "missing dist/$f" >&2; exit 1; }
           done
-      - run: cd dist && for f in *.exe *.dmg; do sha256sum "$f" > "$f.sha256"; done && cat *.sha256
-      - run: gh release create "$GITHUB_REF_NAME" --title "Try FydeOS ${GITHUB_REF_NAME#v}" --generate-notes dist/*.exe dist/*.dmg dist/*.sha256
+      - name: release assets, io only, named without spaces
+        run: |
+          tag=${GITHUB_REF_NAME#v}
+          mkdir release
+          cp "dist/Try FydeOS-$tag.exe" "release/TryFydeOS-$tag.exe"
+          cp "dist/Try FydeOS-$tag.dmg" "release/TryFydeOS-$tag.dmg"
+          cd release && for f in *.exe *.dmg; do sha256sum "$f" > "$f.sha256"; done && cat *.sha256
+      - run: gh release create "$GITHUB_REF_NAME" --title "Try FydeOS ${GITHUB_REF_NAME#v}" --generate-notes release/*
