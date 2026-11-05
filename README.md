@@ -10,7 +10,8 @@ host (text, both directions). A Linux version is planned.
 Modeled on [Try Omarchy](https://tryomarchy.com) (MIT). The QEMU runtimes
 are built from Try Omarchy's recipes, pinned by commit and hash, with this
 project's overlay patches; the launchers, storage, lifecycle and guest
-contract are this project's own.
+contract are this project's own, licensed under the Apache License 2.0
+(see `LICENSE`, `NOTICE` and `THIRD_PARTY_NOTICES.md`).
 
 Status:
 
