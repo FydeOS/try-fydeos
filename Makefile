@@ -43,6 +43,28 @@ help:
 	@echo "make win-test   run the Go unit tests of windows/ on this host"
 	@echo "make win-sync   copy both exes, spec and sources to the NUC ($(NUC_DIR))"
 	@echo "make win-dist   pack dist/Try FydeOS-<version>.exe: GUI exe + runtime and spec payload"
+	@echo "make linux-install install Linux/QEMU dependencies"
+	@echo "make linux-prepare  download and convert the FydeOS image"
+	@echo "make linux-run      start FydeOS and Apache Guacamole"
+	@echo "make linux-stop     stop FydeOS and Apache Guacamole"
+	@echo "make linux-status   show FydeOS/Guacamole status"
+
+.PHONY: linux-install linux-prepare linux-run linux-stop linux-status
+
+linux-install:
+	linux/scripts/install-deps.sh
+
+linux-prepare:
+	linux/scripts/prepare.sh
+
+linux-run:
+	linux/scripts/run.sh
+
+linux-stop:
+	linux/scripts/stop.sh
+
+linux-status:
+	linux/scripts/status.sh
 
 sync:
 	@test "$$(uname -s)" != Darwin || { echo "make sync: run this on the workstation" >&2; exit 1; }

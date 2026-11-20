@@ -1,0 +1,19 @@
+services:
+  guacd:
+    image: guacamole/guacd:1.6.0
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  guacamole:
+    image: guacamole/guacamole:1.6.0
+    depends_on:
+      - guacd
+    environment:
+      GUACD_HOSTNAME: guacd
+      WEBAPP_CONTEXT: ROOT
+    ports:
+      - "${TRY_FYDEOS_GUAC_PORT:-8080}:8080"
+    volumes:
+      - "${TRY_FYDEOS_GUAC_HOME:?TRY_FYDEOS_GUAC_HOME is required}:/etc/guacamole:ro"
+    restart: unless-stopped
