@@ -1,0 +1,17 @@
+services:
+  vm:
+    image: dockurr/windows
+    container_name: vm
+    environment:
+      VERSION: "11"
+      RAM_SIZE: "4G"
+      CPU_CORES: "2"
+      RESOLUTION: "1280x720"
+    ports:
+      - "8006:8006"
+    devices:
+      - /dev/kvm
+    cap_add:
+      - NET_ADMIN
+    stdin_open: true
+    tty: true
