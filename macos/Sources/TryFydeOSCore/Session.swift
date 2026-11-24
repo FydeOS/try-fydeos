@@ -68,7 +68,8 @@ extension Workspace {
         }
         say("converting \(container.path) into \(disk.path)")
         let start = Date()
-        let metadata = try prepare(lock: lock, spec: spec, container: container, record: record, varsTemplate: loc.varsTemplate) {
+        let metadata = try prepare(lock: lock, spec: spec, container: container, record: record, varsTemplate: loc.varsTemplate,
+                                   zstd: loc.zstd) {
             progress(.converting, $0, $1)
         }
         say(String(format: "converted in %.1f s (FydeOS image %lld bytes)", Date().timeIntervalSince(start), metadata.factory.rawBytes))

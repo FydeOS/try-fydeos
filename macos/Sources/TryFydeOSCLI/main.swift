@@ -133,6 +133,11 @@ func cmdDoctor(_ o: Options) throws -> Int32 {
         let exists = fm.fileExists(atPath: image.path, isDirectory: &isDir)
         check(exists && !isDir.boolValue, "local image \(image.path) (TRY_FYDEOS_FACTORY_IMAGE)", missing: !exists)
     }
+    if let image = loc.bundledImage {
+        let size = ((try? fm.attributesOfItem(atPath: image.path))?[.size] as? NSNumber)?.int64Value ?? -1
+        report("info", "bundled image \(image.path) (\(size) bytes)")
+        check(fm.isExecutableFile(atPath: loc.zstd.path), "zstd \(loc.zstd.path)", missing: !fm.fileExists(atPath: loc.zstd.path))
+    }
     let images = ((try? fm.contentsOfDirectory(atPath: loc.images.path)) ?? []).sorted()
     if images.isEmpty {
         report("info", "images \(loc.images.path): none downloaded yet")
@@ -143,11 +148,15 @@ func cmdDoctor(_ o: Options) throws -> Int32 {
             report("info", "  \(name.padding(toLength: max(48, name.count), withPad: " ", startingAt: 0)) \(size) bytes")
         }
     }
-    do {
-        let r = try blockingAwait { try await fetchRelease(api: spec.release.api, board: spec.release.board, appVersion: loc.appVersion) }
-        report("info", "release API latest \(spec.release.board): \(r.fileName) \(r.version) (\(r.releaseDate)), sha256 \(r.sha256)")
-    } catch {
-        report("info", "release API: \(error)")
+    if let release = spec.release {
+        do {
+            let r = try blockingAwait { try await fetchRelease(api: release.api, board: release.board, appVersion: loc.appVersion) }
+            report("info", "release API latest \(release.board): \(r.fileName) \(r.version) (\(r.releaseDate)), sha256 \(r.sha256)")
+        } catch {
+            report("info", "release API: \(error)")
+        }
+    } else {
+        report("info", "release API: none in the factory spec")
     }
     let ws = Workspace(url: o.workspace)
     switch ws.state {

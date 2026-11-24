@@ -157,3 +157,73 @@ final class Listing: @unchecked Sendable {
     loc.runtime = root.appendingPathComponent("none")
     #expect(loc.qemu.lastPathComponent == "qemu-system-aarch64")
 }
+
+@Test func bundledImageIsFoundInTheBundleOrTheEnvironment() throws {
+    let root = try tempDir()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let contents = root.appendingPathComponent("Try FydeOS.app/Contents")
+    let exe = contents.appendingPathComponent("MacOS/TryFydeOS")
+    try touch(exe)
+    try touch(contents.appendingPathComponent("Resources/factory/spec.json"))
+    #expect(try Locations.discover(environment: [:], executable: exe).bundledImage == nil)
+    let image = contents.appendingPathComponent("Resources/factory/image.zst")
+    try touch(image)
+    #expect(try Locations.discover(environment: [:], executable: exe).bundledImage?.path == image.resolvingSymlinksInPath().path)
+    let other = root.appendingPathComponent("other.zst")
+    try touch(other)
+    #expect(try Locations.discover(environment: ["TRY_FYDEOS_BUNDLED_IMAGE": other.path], executable: exe).bundledImage?.path == other.path)
+    #expect(throws: ConfigError.self) {
+        try Locations.discover(environment: ["TRY_FYDEOS_BUNDLED_IMAGE": root.appendingPathComponent("missing.zst").path], executable: exe)
+    }
+
+    try touch(root.appendingPathComponent("repo/runtime/lock.json"))
+    try touch(root.appendingPathComponent("repo/factory/arm64-vmware-io.json"))
+    try touch(root.appendingPathComponent("repo/factory/image.zst"))
+    let repoExe = root.appendingPathComponent("repo/macos/.build/release/tryfydeos")
+    try touch(repoExe)
+    #expect(try Locations.discover(environment: [:], executable: repoExe).bundledImage == nil)
+}
+
+@Test func factoryContainerTakesTheBundledImageWithoutNetwork() async throws {
+    let root = try tempDir()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let bundled = root.appendingPathComponent("Resources/factory/image.zst")
+    try touch(bundled)
+    let images = root.appendingPathComponent("images")
+    try touch(images.appendingPathComponent("old.zip"))
+    var loc = Locations(root: nil, bundleResources: nil, runtime: root, firmware: root, factorySpec: root, factoryImageOverride: nil,
+                        bundledImage: bundled, images: images, appVersion: "1")
+    let sum = String(repeating: "a", count: 64)
+    let want = FactoryRecord(url: "https://127.0.0.1:1/v1/pinned.zip", fileName: "image.zst", sha256: sum, version: "v")
+    for api in ["https://127.0.0.1:1/api", nil] {
+        let spec = testSpec(url: "https://127.0.0.1:1/v1/pinned.zip", bytes: 1, sha256: sum, api: api)
+        var lines: [String] = []
+        let (path, record) = try await loc.factoryContainer(spec: spec, say: { lines.append($0) })
+        #expect(path == bundled && record == want)
+        #expect(lines == ["using the bundled image \(bundled.path)"])
+        #expect(try FileManager.default.contentsOfDirectory(atPath: images.path) == ["old.zip"])
+    }
+    loc.factoryImageOverride = vmdkFixture("test.ova")
+    let (path, record) = try await loc.factoryContainer(spec: testSpec(), say: { _ in })
+    #expect(path == vmdkFixture("test.ova") && record == FactoryRecord(fileName: "test.ova"))
+}
+
+@Test func factoryContainerWithoutReleaseUsesThePinnedImage() async throws {
+    let (pinned, pinnedSum) = testContent()
+    let server = try HTTPTestServer { request in
+        request.path == "/v1/pinned.zip" ? .ranged(pinned, request) : HTTPResponse(status: 503)
+    }
+    defer { server.stop() }
+    let root = try tempDir()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let spec = testSpec(url: server.baseURL + "/v1/pinned.zip", bytes: Int64(pinned.count), sha256: pinnedSum, api: nil)
+    let loc = Locations(root: nil, bundleResources: nil, runtime: root, firmware: root, factorySpec: root, factoryImageOverride: nil,
+                        images: root.appendingPathComponent("images"), appVersion: "1")
+    var lines: [String] = []
+    let (path, record) = try await loc.factoryContainer(spec: spec, say: { lines.append($0) })
+    #expect(path == loc.images.appendingPathComponent("pinned.zip"))
+    #expect(record == FactoryRecord(url: spec.image.url, fileName: "pinned.zip", sha256: pinnedSum, version: "v"))
+    #expect(lines.first == "no release API in the factory spec; using the pinned image")
+    #expect(!server.requests.isEmpty && server.requests.allSatisfy { $0.path == "/v1/pinned.zip" })
+    #expect(try Data(contentsOf: path) == pinned)
+}

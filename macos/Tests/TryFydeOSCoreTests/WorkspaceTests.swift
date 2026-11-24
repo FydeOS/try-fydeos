@@ -65,9 +65,9 @@ func tempDir() throws -> URL {
 }
 
 func testSpec(diskBytes: Int64 = 64 << 20, url: String = "https://example.invalid/v1/pinned.zip", bytes: Int64 = 1,
-              sha256: String = String(repeating: "0", count: 64), api: String = "https://example.invalid/api") -> FactorySpec {
+              sha256: String = String(repeating: "0", count: 64), api: String? = "https://example.invalid/api") -> FactorySpec {
     FactorySpec(schema: 2, image: .init(url: url, bytes: bytes, sha256: sha256, version: "v"),
-                release: .init(api: api, board: "b"), diskBytes: diskBytes, board: "b")
+                release: api.map { FactorySpec.ReleaseSource(api: $0, board: "b") }, diskBytes: diskBytes, board: "b")
 }
 
 private func varsTemplate(in root: URL) throws -> URL {
@@ -218,16 +218,22 @@ func sha256(of url: URL, prefix: Int) throws -> String {
     let root = try tempDir()
     defer { try? FileManager.default.removeItem(at: root) }
     let zero = String(repeating: "0", count: 64)
-    func load(_ image: [String: Any], schema: Int = 2, api: String = "https://example.invalid/api") throws -> FactorySpec {
+    func load(_ image: [String: Any], schema: Int = 2, api: String = "https://example.invalid/api",
+              release: [String: Any]?? = nil) throws -> FactorySpec {
         let url = root.appendingPathComponent("spec.json")
-        try JSONSerialization.data(withJSONObject: ["schema": schema, "board": "b", "diskBytes": 1, "image": image,
-                                                    "release": ["api": api, "board": "b"]]).write(to: url)
+        var json: [String: Any] = ["schema": schema, "board": "b", "diskBytes": 1, "image": image]
+        if let body = release ?? ["api": api, "board": "b"] { json["release"] = body }
+        try JSONSerialization.data(withJSONObject: json).write(to: url)
         return try FactorySpec.load(url)
     }
     let good: [String: Any] = ["url": "https://example.invalid/d/x.zip", "bytes": 1, "sha256": zero, "version": "v"]
     #expect(try load(good).image.url == "https://example.invalid/d/x.zip")
     #expect(throws: ConfigError.self) { try load(good, schema: 1) }
     #expect(throws: ConfigError.self) { try load(good, api: "http://example.invalid/api") }
+    #expect(try load(good).release?.board == "b")
+    #expect(try load(good, release: .some(nil)).release == nil)
+    #expect(throws: ConfigError.self) { try load(good, release: ["api": "https://example.invalid/api", "board": ""]) }
+    #expect(throws: (any Error).self) { try load(good, release: ["api": "https://example.invalid/api"]) }
     for (key, value) in [("url", "http://example.invalid/x.zip"), ("url", "https://example.invalid/"), ("sha256", "abc")] as [(String, Any)] {
         var bad = good
         bad[key] = value
@@ -240,7 +246,152 @@ func sha256(of url: URL, prefix: Int) throws -> String {
         .deletingLastPathComponent().appendingPathComponent("../../../factory/arm64-vmware-io.json").standardizedFileURL)
     #expect(spec.board == "arm64-vmware-io")
     #expect(spec.image.bytes == 1574658456)
-    #expect(spec.release.board == "arm64-vmware")
+    #expect(spec.release?.board == "arm64-vmware")
     #expect(try urlFileName(spec.image.url) == "FydeOS-VMWare-v23.1-Preview1-arm64-io.zip")
     #expect(spec.diskBytes == 64 << 30)
+}
+
+let testZstd: URL? = [
+    URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        .appendingPathComponent("../../../out/runtime/current/runtime/bin/zstd").standardizedFileURL,
+    URL(fileURLWithPath: "/opt/homebrew/bin/zstd"),
+].first { FileManager.default.isExecutableFile(atPath: $0.path) }
+
+let zstImageBytes = 24 << 20
+private let zstPattern = Data((0..<(1 << 20)).map { UInt8(truncatingIfNeeded: ($0 &* 2654435761) >> 13) | 1 })
+
+/// A raw disk of `zstImageBytes`: data in the first MiB and from 12345 bytes into the last MiB to the end,
+/// zeros between (APFS allocates holes shorter than about 16 MiB); its GPT header claims the alternate
+/// header at sector `alternate` (the last sector by default).
+func zstRawImage(gpt: Bool = true, alternate: UInt64 = UInt64(zstImageBytes / 512 - 1)) -> Data {
+    var raw = zstPattern + Data(count: zstImageBytes - 2 * zstPattern.count) + Data(count: 12345) + zstPattern.dropFirst(12345)
+    raw.replaceSubrange(512..<1024, with: Data(count: 512))
+    if gpt {
+        raw.replaceSubrange(512..<520, with: Data("EFI PART".utf8))
+        raw.replaceSubrange(544..<552, with: withUnsafeBytes(of: alternate.littleEndian) { Data($0) })
+    }
+    return raw
+}
+
+/// Compresses `raw` as the bundle does; `fromPipe` leaves the content size out of the frame header.
+func zstFile(_ raw: Data, in dir: URL, name: String = "image.zst", fromPipe: Bool = false) throws -> URL {
+    let input = dir.appendingPathComponent("\(name).raw")
+    try raw.write(to: input)
+    defer { try? FileManager.default.removeItem(at: input) }
+    let output = dir.appendingPathComponent(name)
+    let p = Process()
+    p.executableURL = testZstd!
+    p.arguments = ["-q", "-f", "-19", "--long=27", "-o", output.path] + (fromPipe ? [] : [input.path])
+    if fromPipe { p.standardInput = try FileHandle(forReadingFrom: input) }
+    try p.run()
+    p.waitUntilExit()
+    #expect(p.terminationStatus == 0)
+    return output
+}
+
+@Test(.enabled(if: testZstd != nil))
+func prepareUnpacksZstRawImageSparse() throws {
+    for fromPipe in [false, true] {
+        let root = try tempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let vars = try varsTemplate(in: root)
+        let raw = zstRawImage()
+        let image = try zstFile(raw, in: root, fromPipe: fromPipe)
+        #expect(zstdContentSize(image) == (fromPipe ? nil : Int64(raw.count)))
+        let ws = Workspace(url: root.appendingPathComponent("vm"))
+        let lock = try ws.open(requireAPFS: false)
+        defer { lock.release() }
+        let record = FactoryRecord(url: "u", fileName: "image.zst", sha256: "s", version: "v")
+        var reports: [(Int64, Int64)] = []
+        let metadata = try ws.prepare(lock: lock, spec: testSpec(), container: image, record: record, varsTemplate: vars,
+                                      zstd: testZstd!) { reports.append(($0, $1)) }
+        let n = Int64(raw.count)
+        #expect(reports.count >= 2 && reports.allSatisfy { $0.1 == n } && reports.last.map { $0.0 } == n, "\(fromPipe)")
+        var want = record
+        want.rawBytes = n
+        #expect(metadata.factory == want)
+        #expect(ws.isPrepared)
+        #expect(!FileManager.default.fileExists(atPath: ws.stagingDisk.path))
+        let attrs = try FileManager.default.attributesOfItem(atPath: ws.disk.path)
+        #expect((attrs[.size] as? NSNumber)?.int64Value == 64 << 20)
+        #expect((attrs[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+        var st = stat()
+        #expect(stat(ws.disk.path, &st) == 0 && Int64(st.st_blocks) * 512 < 8 << 20, "\(st.st_blocks) blocks")
+        let disk = try FileHandle(forReadingFrom: ws.disk)
+        defer { try? disk.close() }
+        #expect(try disk.read(upToCount: raw.count) == raw)
+        #expect(try disk.read(upToCount: 4096) == Data(count: 4096))
+    }
+}
+
+@Test(.enabled(if: testZstd != nil))
+func prepareTakesBundledZstThroughLocations() throws {
+    let root = try tempDir()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let fw = root.appendingPathComponent("fw")
+    try FileManager.default.createDirectory(at: fw, withIntermediateDirectories: true)
+    try Data(repeating: 0, count: 4096).write(to: fw.appendingPathComponent("edk2-arm-vars.fd"))
+    let zero = String(repeating: "0", count: 64)
+    let specFile = root.appendingPathComponent("spec.json")
+    try JSONSerialization.data(withJSONObject: [
+        "schema": 2, "board": "b", "diskBytes": 64 << 20,
+        "image": ["url": "https://127.0.0.1:1/pinned.zip", "bytes": 1, "sha256": zero, "version": "v"],
+    ]).write(to: specFile)
+    let raw = zstRawImage()
+    let loc = Locations(root: nil, bundleResources: nil, runtime: testZstd!.deletingLastPathComponent().deletingLastPathComponent(),
+                        firmware: fw, factorySpec: specFile, factoryImageOverride: nil,
+                        bundledImage: try zstFile(raw, in: root), images: root.appendingPathComponent("images"))
+    let ws = Workspace(url: root.appendingPathComponent("vm"))
+    let lock = try ws.open(requireAPFS: false)
+    defer { lock.release() }
+    var lines: [String] = []
+    var stages: [PrepareStage] = []
+    let metadata = try ws.prepare(lock: lock, locations: loc, say: { lines.append($0) }) { stage, _, _ in stages.append(stage) }
+    #expect(metadata.factory == FactoryRecord(url: "https://127.0.0.1:1/pinned.zip", fileName: "image.zst", sha256: zero, version: "v",
+                                              rawBytes: Int64(raw.count)))
+    #expect(Set(stages) == [.converting])
+    #expect(lines.first == "using the bundled image \(loc.bundledImage!.path)")
+    #expect(!FileManager.default.fileExists(atPath: loc.images.path))
+    let disk = try FileHandle(forReadingFrom: ws.disk)
+    defer { try? disk.close() }
+    #expect(try disk.read(upToCount: raw.count) == raw)
+}
+
+@Test(.enabled(if: testZstd != nil))
+func prepareRejectsBrokenZstImages() throws {
+    let root = try tempDir()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let vars = try varsTemplate(in: root)
+    let ws = Workspace(url: root.appendingPathComponent("vm"))
+    let lock = try ws.open(requireAPFS: false)
+    defer { lock.release() }
+    let sectors = UInt64(zstImageBytes / 512)
+    let corrupt = try zstFile(zstRawImage(), in: root, name: "corrupt.zst")
+    let whole = try Data(contentsOf: corrupt)
+    try whole.prefix(whole.count / 2).write(to: corrupt)
+    let cases: [(URL, String)] = [
+        (try zstFile(zstRawImage(alternate: sectors - 2), in: root, name: "long.zst"), "foreign image: data beyond the GPT"),
+        (try zstFile(zstRawImage(alternate: sectors), in: root, name: "short.zst"), "truncated image"),
+        (try zstFile(zstRawImage(gpt: false), in: root, name: "nogpt.zst"), "no GPT on the disk"),
+        (corrupt, "zstd exit"),
+    ]
+    for (image, why) in cases {
+        do {
+            _ = try ws.prepare(lock: lock, spec: testSpec(), container: image, record: FactoryRecord(fileName: "x"), varsTemplate: vars,
+                               zstd: testZstd!)
+            Issue.record("\(image.lastPathComponent) accepted")
+        } catch {
+            #expect("\(error)".contains(why), "\(image.lastPathComponent): \(error)")
+        }
+        #expect(!ws.isPrepared)
+        #expect(!FileManager.default.fileExists(atPath: ws.disk.path))
+        #expect(!FileManager.default.fileExists(atPath: ws.stagingDisk.path))
+    }
+    do {
+        _ = try ws.prepare(lock: lock, spec: testSpec(diskBytes: 4 << 20), container: try zstFile(zstRawImage(), in: root),
+                           record: FactoryRecord(fileName: "x"), varsTemplate: vars, zstd: testZstd!)
+        Issue.record("image larger than the VM disk accepted")
+    } catch {
+        #expect("\(error)".contains("more than the"))
+    }
 }
