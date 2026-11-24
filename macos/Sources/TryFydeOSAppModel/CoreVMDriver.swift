@@ -123,7 +123,11 @@ public final class CoreVMDriver: VMDriver, @unchecked Sendable {
             do {
                 let loc = try locations()
                 let spec = try FactorySpec.load(loc.factorySpec)
-                let r = try await fetchRelease(api: spec.release.api, board: spec.release.board, appVersion: loc.appVersion)
+                guard loc.bundledImage == nil, let release = spec.release else {
+                    log.write("release check: skipped (\(loc.bundledImage == nil ? "no release API in the factory spec" : "bundled image"))")
+                    return
+                }
+                let r = try await fetchRelease(api: release.api, board: release.board, appVersion: loc.appVersion)
                 log.write("release check: \(r.fileName) \(r.version) (\(r.releaseDate)), sha256 \(r.sha256)")
                 DispatchQueue.main.async { events(.release(r)) }
             } catch {

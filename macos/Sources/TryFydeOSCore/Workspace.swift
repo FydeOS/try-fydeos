@@ -60,6 +60,31 @@ func freeBytes(_ url: URL) throws -> Int64 {
     return Int64(fs.f_bavail) * Int64(fs.f_bsize)
 }
 
+/// The image length a GPT header gives (its alternate header is the last sector); -1 when it does not
+/// fit or `header` is not a GPT header.
+func gptEnd(_ header: [UInt8]) -> Int64 {
+    guard header.count >= 40, header.prefix(8).elementsEqual("EFI PART".utf8) else { return -1 }
+    let alternate = VMDK.u64(header, 32)
+    return alternate < UInt64(Int64.max / 512) ? (Int64(alternate) + 1) * 512 : -1
+}
+
+/// Frame_Content_Size from the header of the zstd frame at the start of `url`, nil when absent.
+func zstdContentSize(_ url: URL) -> Int64? {
+    guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+    defer { try? handle.close() }
+    guard let data = try? handle.read(upToCount: 18), data.count >= 6 else { return nil }
+    let b = [UInt8](data)
+    guard b[0] == 0x28, b[1] == 0xB5, b[2] == 0x2F, b[3] == 0xFD else { return nil }
+    let descriptor = b[4]
+    let singleSegment = descriptor & 0x20 != 0
+    let fcsBytes = [singleSegment ? 1 : 0, 2, 4, 8][Int(descriptor >> 6)]
+    let at = 5 + (singleSegment ? 0 : 1) + [0, 1, 2, 4][Int(descriptor & 3)]
+    guard fcsBytes > 0, b.count >= at + fcsBytes else { return nil }
+    let value = (0..<fcsBytes).reduce(UInt64(0)) { $0 | UInt64(b[at + $1]) << (8 * $1) }
+    guard value <= UInt64(Int64.max) else { return nil }
+    return Int64(value) + (fcsBytes == 2 ? 256 : 0)
+}
+
 /// Index of the last non-zero byte, nil for an all-zero buffer.
 func lastNonZero(_ data: UnsafeRawBufferPointer) -> Int? {
     var i = data.count
@@ -168,11 +193,11 @@ public final class Workspace {
         return existing
     }
 
-    /// Converts the disk of `container` (.ova or .zip) into a sparse disk of `spec.diskBytes` and clones
-    /// the vars template; `record` is stored in the metadata with the image's length. Idempotent: a
-    /// prepared workspace is left alone.
+    /// Converts the disk of `container` (.ova or .zip, or a raw image in .zst unpacked with `zstd`) into a
+    /// sparse disk of `spec.diskBytes` and clones the vars template; `record` is stored in the metadata with
+    /// the image's length. Idempotent: a prepared workspace is left alone.
     public func prepare(lock: StorageLock, spec: FactorySpec, container: URL, record: FactoryRecord, varsTemplate: URL,
-                        progress: (_ done: Int64, _ total: Int64) -> Void = { _, _ in }) throws -> Metadata {
+                        zstd: URL? = nil, progress: (_ done: Int64, _ total: Int64) -> Void = { _, _ in }) throws -> Metadata {
         precondition(lock.path == lockFile.path && lock.fd >= 0)
         if isPrepared { return try existingMetadata() }
         let fm = FileManager.default
@@ -180,7 +205,9 @@ public final class Workspace {
         let available = try freeBytes(url)
         guard available >= workReserve else { throw WorkspaceError.noSpace(needed: workReserve, available: available) }
         try Self.clone(varsTemplate, to: efiVars)
-        let raw = try convert(container, to: stagingDisk, diskBytes: spec.diskBytes, progress: progress)
+        let raw = container.pathExtension.lowercased() == "zst"
+            ? try unpack(container, zstd: zstd, to: stagingDisk, diskBytes: spec.diskBytes, progress: progress)
+            : try convert(container, to: stagingDisk, diskBytes: spec.diskBytes, progress: progress)
         guard rename(stagingDisk.path, disk.path) == 0 else { throw WorkspaceError.system("rename \(stagingDisk.path) -> \(disk.path)", errno) }
         guard truncate(disk.path, off_t(spec.diskBytes)) == 0 else { throw WorkspaceError.system("truncate \(disk.path)", errno) }
         var record = record
@@ -237,6 +264,97 @@ public final class Workspace {
         }
         guard ftruncate(fd, off_t(raw)) == 0 else { throw WorkspaceError.system("truncate \(output.path)", errno) }
         if memberSize > 0 { progress(memberSize, memberSize) }
+        done = true
+        return raw
+    }
+
+    /// Streams the raw image out of `zstd` into a sparse file, skipping all-zero chunks; the image must end
+    /// exactly with its GPT's alternate header. Returns its length.
+    private func unpack(_ image: URL, zstd: URL?, to output: URL, diskBytes: Int64, progress: (Int64, Int64) -> Void) throws -> Int64 {
+        guard let zstd else { throw ConfigError.invalid("\(image.path): no zstd to unpack it with") }
+        var done = false
+        defer { if !done { try? FileManager.default.removeItem(at: output) } }
+        let fd = Darwin.open(output.path, O_RDWR | O_CREAT | O_TRUNC, 0o600)
+        guard fd >= 0 else { throw WorkspaceError.system("open \(output.path)", errno) }
+        defer { close(fd) }
+        let process = Process()
+        process.executableURL = zstd
+        process.arguments = ["-dcq", "--long=27", image.path]
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+        try process.run()
+        defer {
+            if process.isRunning { process.terminate() }
+            process.waitUntilExit()
+        }
+        let input = stdout.fileHandleForReading.fileDescriptor
+        var total = zstdContentSize(image) ?? 0
+        var header: [UInt8] = []
+        var count: Int64 = 0
+        var lastStep: Int64 = -1
+        let chunk = UnsafeMutableRawBufferPointer.allocate(byteCount: 1 << 20, alignment: 8)
+        defer { chunk.deallocate() }
+        while true {
+            var filled = 0
+            while filled < chunk.count {
+                let n = read(input, chunk.baseAddress! + filled, chunk.count - filled)
+                if n < 0 {
+                    if errno == EINTR { continue }
+                    throw WorkspaceError.system("read from zstd", errno)
+                }
+                if n == 0 { break }
+                filled += n
+            }
+            if filled == 0 { break }
+            let data = UnsafeRawBufferPointer(rebasing: chunk[0..<filled])
+            if count == 0, filled >= 1024 {
+                header = [UInt8](data[512..<1024])
+                // Without a content size in the frame header, the GPT gives the expected total.
+                if total == 0 { total = max(gptEnd(header), 0) }
+            }
+            if lastNonZero(data) != nil {
+                var written = 0
+                while written < filled {
+                    let n = pwrite(fd, data.baseAddress! + written, filled - written, off_t(count) + off_t(written))
+                    if n < 0 {
+                        if errno == EINTR { continue }
+                        throw WorkspaceError.system("write \(output.path)", errno)
+                    }
+                    written += n
+                }
+            }
+            count += Int64(filled)
+            if total > 0, min(count, total) * 100 / total != lastStep {
+                lastStep = min(count, total) * 100 / total
+                progress(min(count, total), total)
+            }
+        }
+        process.waitUntilExit()
+        let message = String(decoding: stderr.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard process.terminationReason == .exit, process.terminationStatus == 0 else {
+            throw ConfigError.invalid("unpacking \(image.path) failed (zstd exit \(process.terminationStatus)): \(message)")
+        }
+        guard header.prefix(8).elementsEqual("EFI PART".utf8) else {
+            throw ConfigError.invalid("\(image.path): no GPT on the disk")
+        }
+        let raw = gptEnd(header)
+        if raw <= 0 {
+            throw ConfigError.invalid("\(image.path): the GPT ends at \(raw), outside the image")
+        }
+        if count > raw {
+            throw ConfigError.invalid("\(image.path): foreign image: data beyond the GPT (\(count) bytes, the GPT ends at \(raw))")
+        }
+        if count < raw {
+            throw ConfigError.invalid("\(image.path): truncated image: \(count) bytes, the GPT ends at \(raw)")
+        }
+        if raw > diskBytes {
+            throw ConfigError.invalid("\(image.path): the image is \(raw) bytes, more than the \(diskBytes)-byte VM disk")
+        }
+        guard ftruncate(fd, off_t(raw)) == 0 else { throw WorkspaceError.system("truncate \(output.path)", errno) }
+        progress(raw, raw)
         done = true
         return raw
     }

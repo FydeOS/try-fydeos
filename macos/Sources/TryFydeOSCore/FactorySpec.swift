@@ -10,7 +10,7 @@ public struct FactorySpec: Decodable, Sendable {
         public var version: String
     }
 
-    /// Where the latest published image of the board is listed.
+    /// Where the latest published image of the board is listed; absent for builds that never check.
     public struct ReleaseSource: Decodable, Sendable {
         public var api: String
         public var board: String
@@ -18,7 +18,7 @@ public struct FactorySpec: Decodable, Sendable {
 
     public var schema: Int
     public var image: Image
-    public var release: ReleaseSource
+    public var release: ReleaseSource?
     public var diskBytes: Int64
     public var board: String
 
@@ -26,7 +26,7 @@ public struct FactorySpec: Decodable, Sendable {
         let spec = try JSONDecoder().decode(FactorySpec.self, from: Data(contentsOf: url))
         guard spec.schema == 2 else { throw ConfigError.invalid("unsupported factory spec schema \(spec.schema)") }
         guard (try? urlFileName(spec.image.url)) != nil, isHTTPS(spec.image.url), spec.image.bytes > 0,
-              isSHA256(spec.image.sha256), isHTTPS(spec.release.api), !spec.release.board.isEmpty, spec.diskBytes > 0 else {
+              isSHA256(spec.image.sha256), spec.release.map({ isHTTPS($0.api) && !$0.board.isEmpty }) ?? true, spec.diskBytes > 0 else {
             throw ConfigError.invalid("malformed factory spec: \(url.path)")
         }
         return spec
