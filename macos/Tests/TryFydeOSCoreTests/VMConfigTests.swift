@@ -108,7 +108,7 @@ func validationRejects(_ mutate: @Sendable (inout VMConfig) -> Void) {
     _ = try c.argv(host: host)
 }
 
-@Test(arguments: ["127.0.0.1:2222:22", "0.0.0.0:2222:22", "2222", "2222:22 ", "22 22:1", "a:b", "2222,hostfwd=tcp::1-:2:22", "2222:22,x", ":22"])
+@Test(arguments: ["127.0.0.1:2222:22", "0.0.0.0:2222:22", "2222", "2222:22 ", "22 22:1", "a:b", "2222,hostfwd=tcp::1-:2:22", "2222:22,x", ":22", "2222:22/tcp", "2222:22/udp ", "2222/udp:22", "/udp"])
 func forwardParsingRejects(_ text: String) {
     #expect(throws: ConfigError.self) { try HostForward(parsing: text) }
 }
@@ -117,6 +117,17 @@ func forwardParsingRejects(_ text: String) {
     let f = try HostForward(parsing: "2222:22")
     #expect(f == HostForward(hostPort: 2222, guestPort: 22))
     #expect(f.qemuValue == "hostfwd=tcp:127.0.0.1:2222-:22")
+}
+
+@Test func forwardParsingTakesUDP() throws {
+    let f = try HostForward(parsing: "19876:19876/udp")
+    #expect(f == HostForward(hostPort: 19876, guestPort: 19876, udp: true))
+    #expect(f.qemuValue == "hostfwd=udp:127.0.0.1:19876-:19876")
+    var c = config()
+    c.hostForwards = [HostForward(hostPort: 19876, guestPort: 19876), f]
+    #expect(values(try c.argv(host: host), "-netdev") == ["user,id=net,hostfwd=tcp:127.0.0.1:19876-:19876,hostfwd=udp:127.0.0.1:19876-:19876"])
+    c.hostForwards.append(f)
+    #expect(throws: ConfigError.self) { try c.argv(host: host) }
 }
 
 @Test func randomMACIsLocallyAdministered() throws {

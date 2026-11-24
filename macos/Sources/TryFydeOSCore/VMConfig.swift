@@ -10,22 +10,25 @@ public enum GLBackend: String, Sendable, CaseIterable {
 public struct HostForward: Sendable, Equatable {
     public var hostPort: Int
     public var guestPort: Int
+    public var udp = false
 
-    public init(hostPort: Int, guestPort: Int) {
+    public init(hostPort: Int, guestPort: Int, udp: Bool = false) {
         self.hostPort = hostPort
         self.guestPort = guestPort
+        self.udp = udp
     }
 
     public init(parsing text: String) throws {
-        let parts = text.split(separator: ":", omittingEmptySubsequences: false)
+        let udp = text.hasSuffix("/udp")
+        let parts = (udp ? text.dropLast(4) : Substring(text)).split(separator: ":", omittingEmptySubsequences: false)
         guard parts.count == 2, let h = Int(parts[0]), let g = Int(parts[1]),
               parts.allSatisfy({ $0.allSatisfy(\.isASCII) && $0.allSatisfy(\.isNumber) }) else {
-            throw ConfigError.invalid("forward must be HOSTPORT:GUESTPORT on 127.0.0.1, got '\(text)'")
+            throw ConfigError.invalid("forward must be HOSTPORT:GUESTPORT or HOSTPORT:GUESTPORT/udp on 127.0.0.1, got '\(text)'")
         }
-        self.init(hostPort: h, guestPort: g)
+        self.init(hostPort: h, guestPort: g, udp: udp)
     }
 
-    var qemuValue: String { "hostfwd=tcp:127.0.0.1:\(hostPort)-:\(guestPort)" }
+    var qemuValue: String { "hostfwd=\(udp ? "udp" : "tcp"):127.0.0.1:\(hostPort)-:\(guestPort)" }
 }
 
 public enum ConfigError: Error, Equatable, CustomStringConvertible {
@@ -88,13 +91,13 @@ public struct VMConfig: Sendable, Equatable {
         guard memoryMiB >= Self.minMemoryMiB, memoryMiB <= maxMemory else {
             throw ConfigError.invalid("memory must be \(Self.minMemoryMiB)...\(maxMemory) MiB, got \(memoryMiB)")
         }
-        var seen = Set<Int>()
+        var seen = Set<String>()
         for f in hostForwards {
             guard (1...65535).contains(f.hostPort), (1...65535).contains(f.guestPort) else {
                 throw ConfigError.invalid("forward ports must be 1...65535, got \(f.hostPort):\(f.guestPort)")
             }
-            guard seen.insert(f.hostPort).inserted else {
-                throw ConfigError.invalid("host port \(f.hostPort) forwarded twice")
+            guard seen.insert("\(f.hostPort)\(f.udp ? "/udp" : "")").inserted else {
+                throw ConfigError.invalid("host port \(f.hostPort)\(f.udp ? "/udp" : "") forwarded twice")
             }
         }
         guard mac.range(of: "^[0-9a-f]{2}(:[0-9a-f]{2}){5}$", options: .regularExpression) != nil,

@@ -115,7 +115,7 @@ at a local `.ova` or VMware `.zip` to use instead of a download.
 | Images | `~/Library/Application Support/Try FydeOS/images` | `%LOCALAPPDATA%\Try FydeOS\images` |
 | VM workspace | `~/Library/Application Support/Try FydeOS/VM/v1` | `%LOCALAPPDATA%\Try FydeOS\VM\v1` |
 | Override | `defaults write io.fydeos.tryfydeos workspace <dir>` or `TRY_FYDEOS_WORKSPACE` | `preferences.json` `workspace` or `TRY_FYDEOS_WORKSPACE` |
-| Port forwards | `defaults write io.fydeos.tryfydeos forwards "2200:22"` or `TRY_FYDEOS_FORWARDS` | `preferences.json` `forwards` or `TRY_FYDEOS_FORWARDS` |
+| Port forwards | `defaults write io.fydeos.tryfydeos forwards "2200:22"` or `TRY_FYDEOS_FORWARDS`; `/udp` after a pair forwards UDP | `preferences.json` `forwards` or `TRY_FYDEOS_FORWARDS` |
 | App log | `~/Library/Logs/Try FydeOS/TryFydeOS.log` | `%LOCALAPPDATA%\Try FydeOS\Logs\TryFydeOS.log` |
 
 Forwards are comma-separated `HOSTPORT:GUESTPORT` pairs on 127.0.0.1.
