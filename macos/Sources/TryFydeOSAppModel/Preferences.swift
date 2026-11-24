@@ -80,7 +80,7 @@ public struct Preferences: Equatable, Sendable {
         return Workspace.defaultURL
     }
 
-    /// Hidden override for testing: comma-separated HOSTPORT:GUESTPORT, environment first, then the `forwards` default.
+    /// Hidden override for testing: comma-separated HOSTPORT:GUESTPORT[/udp], environment first, then the `forwards` default.
     public static func hostForwards(store: UserDefaults, environment: [String: String] = ProcessInfo.processInfo.environment) -> (forwards: [HostForward], errors: [String]) {
         let list = [environment[forwardsEnvironment], store.string(forKey: Key.forwards)].compactMap { $0 }.first { !$0.isEmpty } ?? ""
         var forwards: [HostForward] = []

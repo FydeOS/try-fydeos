@@ -18,7 +18,7 @@ usage: tryfydeos <command> [options]
   reset --yes                 delete disk.img, efi-vars.fd and metadata.json
 
 vm options: --cpus N (4)  --memory MiB (8192)  --fullscreen  --microphone
-            --forward HOSTPORT:GUESTPORT (repeatable, 127.0.0.1 only)  --gl native|angle
+            --forward HOSTPORT:GUESTPORT[/udp] (repeatable, 127.0.0.1 only)  --gl native|angle
 all commands: --workspace PATH (default ~/Library/Application Support/Try FydeOS/VM/v1)
 """
 
